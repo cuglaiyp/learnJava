@@ -301,7 +301,7 @@ final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
     //如果table为空或者长度为0，则resize()
     if ((tab = table) == null || (n = tab.length) == 0)
         n = (tab = resize()).length;
-    //确定插入table的位置，算法是(n - 1) & hash，在n为2的幂时，相当于取模(取余)操作。
+    //确定插入table的位置，算法是(n - 1) & hash，在n为2的幂时，相当于对n的取模(取余)操作。
     //找到key值对应的槽并且是第一个，直接加入
     if ((p = tab[i = (n - 1) & hash]) == null)
         tab[i] = newNode(hash, key, value, null);
@@ -361,6 +361,31 @@ final V putVal(int hash, K key, V value, boolean onlyIfAbsent,
 > 2.两节点key 值不同，由于 hash 函数的局限性导致hash 值相同，冲突；
 >
 > 3.两节点key 值不同，hash 值不同，但 hash 值对数组长度取模后相同，冲突；
+
+这里有个比较重要的点就是，如果我们用引用类型做key为什么**既要重写hashCode()方法又要重写equals()方法**。可以看到上面的代码，用一个引用类型做key。我们看到putVal()方法的17、18行，判断两个key是不是相等，首先是判断传进来的key的hash与通过hash找到那个node的hash是不是相等，如果相等了还要判断key是不是相等（通过 == 或者 equals方法判断），如果又相等了，才能认定传进来了与这个位置的key是一样的，put的操作就更新值，而不是重新插一个；get操作可以取走这个value，而不是找不到。
+
+我们认识到hashCode()和equals()方法的作用后，我们举个例子。
+
+~~~java
+HashMap<IdStamp,Student> studentMap = new HashMap<>();
+IdStamp id = new IdStamp("1班","1号");
+Student s = new Student("张三","男");
+studentMap.put(id,s);
+//----------------------------
+// 取值
+Student id1 = new IdStamp("1班","1号");
+studentMap.get(id1); //铁定取不到值
+~~~
+
+为什么id的信息是一致的，为但是取不到值呢？因为没有重写hashCode和equals方法。在Object类中原生的hashCode方法返回的是该对象的地址。
+
+在上例中，id1与id的地址就不可能一样了。所以在第一关，用hash找node桶的时候，找到的桶就不一样，何谈取到正确的值呢？所以，要重写hashCode的话，就要保证信息一样的两个对象的hash是一样的，简单一点的，比如`return class.hashCode()+number.hashCode()`。
+
+好，重写了hashCode方法之后，我们已经可以顺利的找到对应的node桶了，这时候进入第二关：用 == 或者 equals方法判断两个key是否相等。==肯定是不相等的，因为它还是判断两个对象的地址。那么就要看equals方法。然而，很不幸的是，Object类的equals方法就是用 == 判断两个对象是否相等的。那么就算我们已经找到正确的桶了，就算已经是找到我们需要的那个node了，由于没有重写equals方法，系统始终认为这两key不等。一样的，如果我们想要重写equals方法的话，就需要保证信息一样的对象是相等的，例如：`return class.equals(o) && number.equals(o) `。
+
+**注：**我们平常用作key的String、Integer等，设计者们早就重写好了hashCode和equals方法，所以俺们才能放心大胆的使。
+
+
 
 ### 6.treeifyBin()
 
@@ -3654,9 +3679,9 @@ private final class Worker extends AbstractQueuedSynchronizer implements Runnabl
 我们可以看到，在通过线程工厂创建线程的时候，需要一个Runnable参数。线程启动后，就去执行Runnable里面的run方法，也就是我们的任务啦？但是这个地方为什么不是直接将我们的任务传递进去，而是把自己这个worker自己本身传进去了呢？为什么要搞得这么绕呢？我们来分析一下这个地方的的逻辑。
 
 1. 首先，我们们来看一下，如果直接把任务传递给线程会出现什么情况。当线程启动的时候，就会调用任务的run方法，执行run方法里面的具体内容。执行完了之后，如果不加处理，这个线程就死掉了，那么就违背了使用线程池的初衷。如果要加处理，那么就只能任务提供者，也就是线程池调用者在run里面写上线程执行完了怎么去取任务、怎么阻塞的逻辑，既然这些任务都由调用者做了，那么线程池还有什么意义呢，是吧？
-2. 所以worker不能直接把任务传递给线程。而是要有一个类，继承了Runnable接口，重写run方法，在这个run方法规定好，线程怎么取任务、取完任务再去调用任务的run方法、没有任务怎么阻塞的逻辑，把这个封装好的Runnable传递给线程就OK了。既然需要一个额外的类，那么Java的设计者们，所有就直接用Worker自己去继承了Runnable，重写run方法，然后把自己传递给了线程。
+2. 所以worker不能直接把任务传递给线程。而是要有一个类，继承了Runnable接口，重写run方法，在这个run方法规定好，线程怎么取任务、取完任务再去调用任务的run方法、没有任务怎么阻塞的逻辑，把这个封装好的Runnable传递给线程就OK了。既然需要一个额外的类，那么Java的设计者们，索性就直接用Worker自己去继承了Runnable，重写run方法，然后把自己传递给了线程。
 3. 前面分析的挺有道理的，但是我们看到Worker的run方法只是简单的调用了一个外部类的runWorker方法，如果我们前面的分析是正确的的话，那么在2.中提到的逻辑肯定被封装到了这个runWorker方法中。事实上也正是如此。那么又一个问题来了，为什么不直接在Worker的run方法中封装这些逻辑呢？
-4. 这就涉及到线程池中的线程是如何阻塞的了。线程池的线程数在少于核心线程数时，默认情况下都不会死掉，而是阻塞任务到来。阻塞等待任务到来，看到这句话会不会想到什么？没错，就是阻塞队列了。每一个线程在被新建的时候，都一个firstTask，当他执行完这个任务之后，就会不断地去阻塞队列中取任务。阻塞队列：没有任务的时候，会阻塞取任务的线程；任务满的时候，会阻塞放任务的线程。根据阻塞队列的这个特性，可想而知，那些核心线程在没有任务的时候，都是被阻塞在去任务的路上了。因为阻塞队列是线程池的东西，虽然内部类可以访问到，但是面向对象是很讲究这个逻辑的，所以斗胆猜测一下，因为这个原因，要把逻辑封装到线程池的方法runWorker中。
+4. 这就涉及到线程池中的线程是如何阻塞的了。线程池的线程数在少于核心线程数时，默认情况下都不会死掉，而是阻塞任务到来。阻塞等待任务到来，看到这句话会不会想到什么？没错，就是阻塞队列了。每一个线程在被新建的时候，都一个firstTask，当他执行完这个任务之后，就会不断地去阻塞队列中取任务。阻塞队列：没有任务的时候，会阻塞取任务的线程；任务满的时候，会阻塞放任务的线程。根据阻塞队列的这个特性，可想而知，那些核心线程在没有任务的时候，都是被阻塞在取任务的路上了。因为阻塞队列是线程池的东西，虽然内部类可以访问到，但是面向对象是很讲究这个逻辑的，所以斗胆猜测一下，因为这个原因，要把逻辑封装到线程池的方法runWorker中。
 
 ##### 3.4.1 runWorker(Runnable)
 
@@ -3984,12 +4009,12 @@ Fork/Join框架在Java中的具体实现是ForkJoinPool。我们来看一下在F
 
 <img src="Java%E6%BA%90%E7%A0%81.assets/ForkJoinPool-ctl.png" style="zoom:50%;" />
 
-可以看到，ctl实际上是分成3份的，由于低32位记录的是一个WorkQueue的scanState，而这个scanState又用低16位记录着自己的WorkQueue在WorkQueues[] 中的下标，所以可以看成是四份。我们来详细说明这四份：
+可以看到，ctl实际上是分成3份的，由于低32位记录的是一个WorkQueue的scanState，而这个scanState又用低16位记录着自己的WorkQueue在WorkQueue[] 中的下标，所以可以看成是四份。我们来详细说明这四份：
 
 - 高16位：值是 **活跃线程数 - 并行度** ，用以表示活跃线程数（AC）。初始时，没有活跃线程数，所以这个区域的值为 **负并行度**，每增加1个活跃线程，就会在这个区域 +1，直到为0，也就是活跃线程数 = 并行度为止。
 - 中高16位：值是 **总线程数 - 并行度** ，用以表示总线程数（TC）。初始时，没有线程，所以这个区域的值为 **负并行度**，每增加1个线程，就会在这个区域 +1，直到为0，也就是总线程数 = 并行度为止。
-- 中低16位：因为WorkQueue的scanState在绑定线程的时候，初始化为当前WorkQueue在WorkQueues[] 中的下标，而WorkQueues[]的长度通过MAX_CAP可知，只用低16位就可以表示了。所以scanState的高16位没有信息，所以作者索性就用这16位中最高位为该线程的状态位，剩下的15位用作该线程的版本号。
-- 低16位：由上述可知，为最近一次使用的WorkQueue在WorkQueues[] 中的下标。也就是说这16位指着一个空闲的WorkQueue，而这个空闲的WorkQueue中的stackPred又指着前一个空闲的WorkQueue。以此形成了一个栈。
+- 中低16位：因为WorkQueue的scanState在绑定线程的时候，初始化为当前WorkQueue在WorkQueue[] 中的下标，而WorkQueue[]的长度通过MAX_CAP可知，只用低16位就可以表示了。所以scanState的高16位没有信息，所以作者索性就用这16位中最高位为该线程的状态位，剩下的15位用作该线程的版本号。
+- 低16位：由上述可知，为最近一次使用的WorkQueue在WorkQueue[] 中的下标。也就是说这16位指着一个空闲的WorkQueue，而这个空闲的WorkQueue中的stackPred又指着前一个空闲的WorkQueue。以此形成了一个栈。
 
 ### 3. 源码
 
@@ -4042,7 +4067,634 @@ public class CounterTask extends RecursiveTask<Integer> {
 
 首先，我们需要把我们的需求编写成ForkJoinPool能够执行的任务，也就是需要继承ForkJoinTask类，这个类有两个子类RecursiveTask（有结果任务）、RecursiveAction（无结果任务）。我们按照只用我们的需求继承这二者之一就行，并且重写compute方法。这样一个任务类就创建好了
 
-然后新建池对象、新建任务对象，把任务用池对象进行提交即可。
+然后新建池对象、新建任务对象，把任务用池对象进行提交即可。提交方法又分为：有结果任务提交（submit）和无结果任务提交（execute）。但是本质上无结果任务提交也是调用的有结果任务提交。下面是执行流程图：
+
+<img src="Java%E6%BA%90%E7%A0%81.assets/ForkJoinPool%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E5%9B%BE.png" style="zoom: 67%;" />
+
+所以我们主要看一下有结果任务提交：submit方法。
+
+#### 3.1 submit(ForkJoinTask)
+
+~~~java
+public <T> ForkJoinTask<T> submit(ForkJoinTask<T> task) {
+    if (task == null)
+        throw new NullPointerException();
+    externalPush(task);
+    return task;
+}
+~~~
+
+很简单一方法，就是调用了externalPush方法
+
+##### 3.1.1 externalPush(ForkJoinTask)
+
+~~~java
+final void externalPush(ForkJoinTask<?> task) {
+    WorkQueue[] ws; WorkQueue q; int m;
+    // 拿到线程相关的随机数（称作探针）
+    int r = ThreadLocalRandom.getProbe();
+    // 拿到池的运行时状态。看看池状态是不是正常、有没有被别的线程上锁什么的
+    int rs = runState;
+    // 判断WorkQueue[]数组是不是为空，并且通过探针r找到的偶数桶位置上是否为空
+    if ((ws = workQueues) != null && (m = (ws.length - 1)) >= 0 &&
+        // 这里 && SQMASK是取偶数的意思
+        (q = ws[m & r & SQMASK]) != null && r != 0 && rs > 0 &&
+        // 前面都满足（WorkQueue[] != null、对应的桶上WorkQueue也不为null），那么就用CAS锁住这个桶
+        U.compareAndSwapInt(q, QLOCK, 0, 1)) {
+        ForkJoinTask<?>[] a; int am, n, s;
+        // 如果WorkQueue[]的数组不为null
+        if ((a = q.array) != null &&
+            // 并且还有空位
+            (am = a.length - 1) > (n = (s = q.top) - q.base)) {
+            // 这里是计算这个task在数组里应放位置的地址。
+            // s = q.top一般来说是小于 am（数组长度-1），所以 am & s 还是等于 s。
+            // s << ASHIFT 就等于 s下标位置距离起始位置的内存大小。（一般一个数组的单元格占4Byte好像）
+            // 再加上 数组起始位置的地址ABASE，就等于当前需要放入数组的位置了
+            int j = ((am & s) << ASHIFT) + ABASE;
+            // 用unsafe的方法把这个task放入数组指定位置（为什么不直接用数组索引放呢？看网上说，这个性能好，速度更快）
+            U.putOrderedObject(a, j, task);
+            // 把top + 1，以便放下一个task
+            U.putOrderedInt(q, QTOP, s + 1);
+            // 解锁
+            U.putIntVolatile(q, QLOCK, 0);
+            // 任务数 <= 1时尝试创建或激活一个工作线程。为什么要有任务数 <= 1这个条件目前还不明朗
+            if (n <= 1)
+                signalWork(ws, q);
+            return;
+        }
+        // 数组还没有初始化，直接解锁
+        U.compareAndSwapInt(q, QLOCK, 1, 0);
+    }
+    // 简版提交没有成功，因为各项还没有初始化，所以需要完整版提交：先初始化，再进行提交
+    externalSubmit(task);
+}
+~~~
+
+##### 3.1.2 externalSubmit(ForkJoinTask)
+
+完整版的提交方法。会先把相关的进行初始化，然后再进行提交
+
+~~~java
+private void externalSubmit(ForkJoinTask<?> task) {
+    int r;          
+    // 先拿探针
+    // 如果 == 0，说明还没有初始化过，需要进行初始化后再拿
+    if ((r = ThreadLocalRandom.getProbe()) == 0) {
+        ThreadLocalRandom.localInit();
+        r = ThreadLocalRandom.getProbe();
+    }
+    // 起一个自旋
+    for (;;) {
+        WorkQueue[] ws; WorkQueue q; int rs, m, k;
+        // move设为false。这个move的意思是：如果通过探针找到的桶已经被上锁或者已经有WorkQueue，即发生了碰撞，就要move，重新找桶
+        boolean move = false;
+        // runState < 0 说明线程池不正常，需要尝试终止并抛出异常
+        if ((rs = runState) < 0) {
+            tryTerminate(false, false);    
+            throw new RejectedExecutionException();
+        }
+        // 如果runState & STARTED == 0 说明线程池还没有启动 或者 WorkQueues为空 或者 WorkQueues长度 <= 0
+        // 都说明 线程池相应的还没初始化，需要先进行初始化操作
+        else if ((rs & STARTED) == 0 ||     
+                 ((ws = workQueues) == null || (m = ws.length - 1) < 0)) {
+            int ns = 0;
+            // 首先用CAS把整个线程池锁起来
+            rs = lockRunState();
+            try {
+                // 再判断一遍线程池是否启动
+                if ((rs & STARTED) == 0) {
+                    // 没有启动的话，先初始化STEALCOUNTER
+                    U.compareAndSwapObject(this, STEALCOUNTER, null,
+                                           new AtomicLong());
+                    // 取config的低16位。因为config = 并行度|模式，而模式要么为0，要么在第17位，所以这里&操作就是
+                    // 取的并行度
+                    int p = config & SMASK; 
+                    // p - 1是因为要留一个给主线程
+                    int n = (p > 1) ? p - 1 : 1;
+                    // 这里参考HashMap初始化，就是找到一个比并行度大于等于的最小的（2的幂 - 1）
+                    n |= n >>> 1; n |= n >>> 2;  n |= n >>> 4;
+                    n |= n >>> 8; n |= n >>> 16; 
+                    // 再+1，并扩大两倍。
+                    n = (n + 1) << 1;
+                    // 初始化WorkQueues
+                    workQueues = new WorkQueue[n];
+                    ns = STARTED;
+                }
+            } finally {
+                // 解锁，并且把runState | 上STARTED，标志线程池已启动
+                unlockRunState(rs, (rs & ~RSLOCK) | ns);
+            }
+            // 上面执行完之后，就自旋一下
+        }
+        // 3. 在第1、2次自旋的时候，对workQueues和workQueue进行了初始化，第3次自旋就到这了
+        // 这里与上面的简版提交方法类似，是正式提交的地方
+        // 先用探针、数组长度-1、偶数掩码，随便找到一个偶数下标k的桶
+        else if ((q = ws[k = r & m & SQMASK]) != null) {
+            // 如果桶中workQueue不为null
+            // 那么判断该桶有没有上锁，没有上锁，则当前线程给它上锁，并进行相应操作
+            if (q.qlock == 0 && U.compareAndSwapInt(q, QLOCK, 0, 1)) {
+                // 拿到该桶里面的task数组
+                ForkJoinTask<?>[] a = q.array;
+                // 拿到数组应该放task的下标top
+                int s = q.top;
+                // 提交完成标记
+                boolean submitted = false; 
+                try {
+                    // 先判断如果桶为null或者大小不足
+                    if ((a != null && a.length > s + 1 - q.base) ||
+                        // 就growArray方法扩容
+                        (a = q.growArray()) != null) {
+                        // 计算应填放的下标的地址
+                        int j = (((a.length - 1) & s) << ASHIFT) + ABASE;
+                        // 填放
+                        U.putOrderedObject(a, j, task);
+                        // top+1
+                        U.putOrderedInt(q, QTOP, s + 1);
+                        // 提交完成
+                        submitted = true;
+                    }
+                } finally {
+                    // 解锁
+                    U.compareAndSwapInt(q, QLOCK, 1, 0);
+                }
+                // 提交成功
+                if (submitted) {
+                    // 唤醒worker
+                    signalWork(ws, q);
+                    return;
+                }
+            }
+            // 如果该桶已经被其他线程上锁了，那么需要move
+            move = true;                   
+        }
+        // 2. 因为第2次自旋，上面的if找到桶里的workQueue为null，所以会跳到这来，初始化workQueue
+        // 先判断线程池有没有被锁
+        else if (((rs = runState) & RSLOCK) == 0) { // create new queue
+            // new一个workQueue出来，会持有当前池对象，并且会把base和top指向array数组的中间
+            q = new WorkQueue(this, null);
+            // 把这个workQueue的hint设置为自己的探针r
+            q.hint = r;
+            // 设置它的config为：它在WorkQueues中下标 | 共享模式 （与池的config区分开喔）
+            q.config = k | SHARED_QUEUE;
+            // 设置它的scanState为INACTIVE，未激活状态
+            q.scanState = INACTIVE;
+            // 用runState加锁，同时赋值给rs
+            rs = lockRunState();        
+            // 加锁成功，并且workQueues已经初始化好了，并且下标k也是正常范围
+            if (rs > 0 &&  (ws = workQueues) != null &&
+                k < ws.length && ws[k] == null)
+                // 那么就把这个workQueue放进对应的桶里面
+                ws[k] = q;                 
+            // 解锁
+            unlockRunState(rs, rs & ~RSLOCK);
+        }
+        // 走到这，说明线程池被其他线程上了锁（上面的move是因为对应的桶被其他线程上锁，注意区分）
+        else
+            // 那么需要move
+            move = true;                  
+        // 如果需要move的话，就重新随机一个探针
+        if (move)
+            r = ThreadLocalRandom.advanceProbe(r);
+    }
+}
+~~~
+
+总结一下这个方法：
+
+1. 就是用自旋，如果WorkQueue[]还没有初始化，先初始化WorkQueue[]，长度一定为2的幂
+2. 再初始化workQueue，并把这个workQueue放到WorkQueue[]对应的槽里，因为是外部提交，这个槽的下标一定是偶数
+3. 再把task放到workQueue中task数组中top下标处，并且激活一个空闲线程或者创建一个新线程，用来处理任务
+
+我们再来看一下激活或者创建线程的方法：signalWork方法
+
+##### 3.1.3 signalWork(WorkQueue, WorkQueue)
+
+~~~java
+final void signalWork(WorkQueue[] ws, WorkQueue q) {
+    long c; int sp, i; WorkQueue v; Thread p;
+   	// 因为ctl最高16位为：活跃线程数 - parallelism。所以当活跃线程数不足时，ctl就 < 0
+    while ((c = ctl) < 0L) {
+        // 取ctl低32进行判断（初始的时候，ctl低32位全为0），因为低32位存储的是空闲队列的信息，所以：
+        // 		!= 0，那说明有空闲队列，执行唤醒操作
+        // 		== 0，说明没有空闲队列，执行添加操作
+        if ((sp = (int)c) == 0) {    
+            // == 0，准备执行添加操作
+            // 先判断总线程数是否达到并行度。这个ADD_WORKER就是第48位为1，与ctl相与，可以判断出ctl第48位是否为1：
+            // 		!= 0：为1，也就是说总线程数还没有达到并行度，可以添加
+            // 		== 0：不为1，也就说总线程数已经达到了并行度，不能再添加线程了
+            if ((c & ADD_WORKER) != 0L)            
+                // != 0，尝试添加worker
+                tryAddWorker(c);
+            break;
+        }
+        // 走到这，说明ctl记录了一个空闲WorkQueue
+        // 判断一下WorkQueue[]是否为null，这个为null，肯定不能继续，对吧
+        if (ws == null)                            
+            break;
+        // 继续判断一下，空闲队列所在WorkQueue[]的下标是否越界，越界了肯定不行，对吧
+        if (ws.length <= (i = sp & SMASK))         
+            break;
+        // 继续判断一下，这个空闲队列是否为null，为null，也没有必要继续，对吧
+        if ((v = ws[i]) == null)                   
+            break;
+        // 前面的条件都满足了，就可以激活这个空闲队列了
+        // 首先用这个空闲队列的版本号+1，防止ABA问题，然后再把激活位置0，用临时变量vs存起来。
+        int vs = (sp + SS_SEQ) & ~INACTIVE;        
+        // ctl中低32位就是空闲队列的scanState，又通过这个scanState中的下标找到了这个空闲队列v，
+        // 所以这里的d == 0
+        int d = sp - v.scanState;
+        // ctl的活跃线程数 +1（因为是激活，总线程数不变），低32位，变成刚刚那个空闲队列所指向的下一个空闲队列
+        long nc = (UC_MASK & (c + AC_UNIT)) | (SP_MASK & v.stackPred);
+        // d == 0没什么问题，就用CAS把ctl更新一下
+        if (d == 0 && U.compareAndSwapLong(this, CTL, c, nc)) {
+            // ctl已经更新了，把临时变量vs赋值给v的scanState，把它的scanState也更新一下
+            v.scanState = vs;                      
+            // 标记都做好了，接下来就始是把线程真正激活
+            // 拿到v上等待的线程，激活（这个parker就是与这个workQueue绑定的线程）
+            if ((p = v.parker) != null)
+                U.unpark(p);
+            // 跳出循环
+            break;
+        }
+        // 如果添加线程失败、或者唤醒空闲线程失败
+        // 那么判断一下传进来的workQueue里面有没有task
+        if (q != null && q.base == q.top)         
+            // 没有的话，也直接跳出了，不需要添加或者唤醒了
+            break;
+    }
+}
+~~~
+
+总结一下这个方法：
+
+活跃线程数不足并行度的时候：
+
+1. 如果有空闲worker（WorkQueue），就唤醒相应的线程
+2. 没有的话，如果总线程数还没有达到并行度的话，那么就进行添加操作
+
+###### 3.1.3.1 tryAddWorker(int)
+
+我们来看看这个方法是怎么添加worker的
+
+~~~java
+private void tryAddWorker(long c) {
+    // 添加完成标记位
+    boolean add = false;
+    do {
+        // newCtl，给ctl的活跃线程数+1，总线程数+1，低位全为0，不变
+        long nc = ((AC_MASK & (c + AC_UNIT)) |
+                   (TC_MASK & (c + TC_UNIT)));
+        // 判断一下，确保ctl没有被别的线程修改
+        if (ctl == c) {
+            int rs, stop;                 
+            // 给整个线程池上锁，并且判断线程池运行状态不是stop的话
+            if ((stop = (rs = lockRunState()) & STOP) == 0)
+                // 用刚刚的nc更新ctl，并返回成功信号给add
+                add = U.compareAndSwapLong(this, CTL, c, nc);
+            // 解锁
+            unlockRunState(rs, rs & ~RSLOCK);
+            // stop != 0的话，说明线程池已经停了，直接break
+            if (stop != 0)
+                break;
+            // add为true，意味着ctl更新完成，可以真正创建一个worker出来
+            if (add) {
+              	// 创建worker
+                createWorker();
+               	// 创建完了break
+                break;
+            }
+        }
+        // 这个循环，要么只有池状态异常，或者成功添加worker，从内部break
+        //         要么线程线程总数已经达到最大，或者有空闲WorkQueue的时候才能退出
+    } while (((c = ctl) & ADD_WORKER) != 0L && (int)c == 0);
+}
+
+
+private boolean createWorker() {
+    ForkJoinWorkerThreadFactory fac = factory;
+    Throwable ex = null;
+    ForkJoinWorkerThread wt = null;
+    try {
+        // 很简单的逻辑，就是用线程工厂，创建一个线程出来
+        if (fac != null && (wt = fac.newThread(this)) != null) {
+            // 创建成功，就启动这个线程
+            wt.start();
+            return true;
+        }
+    } catch (Throwable rex) {
+        ex = rex;
+    }
+    deregisterWorker(wt, ex);
+    return false;
+}
+
+
+public final ForkJoinWorkerThread newThread(ForkJoinPool pool) {
+    // 就很简单的new了一个线程出来，封装了当前线程池参数
+    return new ForkJoinWorkerThread(pool);
+}
+
+
+// 我们继续往下看，看ForkJoinWorkerThread类的构造方法
+protected ForkJoinWorkerThread(ForkJoinPool pool) {
+    // 交给父类初始化名称
+    super("aForkJoinWorkerThread");
+    // 封装池参数
+    this.pool = pool;
+   	// 这个线程里面维护了一个workQueue对象，这个对象是池对象调用registerWorker，把当前线程当参数传进去，所返回的
+    // 这个方法有点绕。大概意思就是：
+    // 		WorkQueue[]里有个WorkQueue，WorkQueue里持有了当前线程对象，当前线程有维护了这个WorkQueue，绑定在一起了
+    this.workQueue = pool.registerWorker(this);
+}
+
+
+//接着看是不是这样的
+final WorkQueue registerWorker(ForkJoinWorkerThread wt) {
+    UncaughtExceptionHandler handler;
+    // 把当前线程设置为守护线程，主线程结束，它就挂掉
+    wt.setDaemon(true);                         
+    if ((handler = ueh) != null)
+        wt.setUncaughtExceptionHandler(handler);
+    // new一个WorkQueue，封装了当前池对象和线程对象！！ 你看我们上面分析得没错
+    WorkQueue w = new WorkQueue(this, wt);
+    int i = 0;               
+    // 通过池的config（并行度|队列进出模式），拿到池中队列的进出模式
+    int mode = config & MODE_MASK;
+    // 对整个池上锁
+    int rs = lockRunState();
+    try {
+        WorkQueue[] ws; int n; 
+        if ((ws = workQueues) != null && (n = ws.length) > 0) {
+            // 如果池已经初始化好
+            // indexSeed在刚开始的时候没有初始化，为0，给它加一个很怪的数，得到s，用来计算下标。不太可能碰撞了
+            int s = indexSeed += SEED_INCREMENT;  // unlikely to collide
+            // 数组长度 - 1。就低位全是1，做掩码
+            int m = n - 1;
+            // 把s扩大一倍。再或上1，保证为奇数。与上m，相当于对 数组长度 取余操作，因为数组长度为偶数，所以余数必为奇数
+            i = ((s << 1) | 1) & m;               
+            // 判断找到的下标位置是否为空（是否碰撞）
+            if (ws[i] != null) {              
+                // 发生碰撞
+             	// 定义一个探测（查找）次数   
+                int probes = 0;
+                // 定义步长，大约取数组长度的一半的偶数。这么定义步长是为了，让我们的所有探查均匀地分布在数组的奇数下标处
+                int step = (n <= 4) ? 2 : ((n >>> 1) & EVENMASK) + 2;
+                // 通过步长循环查找下一个位置
+                while (ws[i = (i + step) & m] != null) {
+                    // 又发生了碰撞
+                    // 看一下查找次数是否超过了数组长度
+                    if (++probes >= n) {
+                        // 如果超过了，那么说明要对WorkQueue[]进行扩容
+                        workQueues = ws = Arrays.copyOf(ws, n <<= 1);
+                        // 重新复制掩码
+                        m = n - 1;
+                        // 令探测次数为0
+                        probes = 0;
+                    }
+                }
+                // 走到这说明，已经找到一个没有发生碰撞的奇数下标位置了
+            }
+            // 初始化workQueue其他的一些属性
+            w.hint = s;  
+            // config记录下标和队列共享模式
+            w.config = i | mode;
+            // scanState记录下标
+            w.scanState = i;        
+            // workQueue填入WorkQueue[]
+            ws[i] = w;
+        }
+    } finally {
+        // workQueue绑定好线程、初始化完成，解锁
+        unlockRunState(rs, rs & ~RSLOCK);
+    }
+    // 给线程设置一个名称
+    wt.setName(workerNamePrefix.concat(Integer.toString(i >>> 1)));
+    // 返回workQueue给线程的构造方法，让线程也维护这个workQueue，完成双向绑定（注册）
+    return w;
+}
+~~~
+
+###### 3.1.3.2 总结signalWork方法
+
+1. 如果有空闲线程，那么就唤醒空闲线程
+2. 如果没有空闲线程，如果还能够添加线程：
+   - 就使用线程工厂创建一个线程
+   - 创建的时候，创建一个workQueue，放置在WorkQueue[]的奇数下标处，与该线程进行双向绑定
+   - 最后启动线程
+
+##### 3.1.4 submit方法总结
+
+1. 先用简版externalPush方法进行提交
+2. 如果简版方法提交失败，调用完整版externalSubmit方法进行提交
+   - 如果WorkQueue[]还没有初始化，先初始化WorkQueue[]
+   - 如果对应偶数槽的WorkQueue还没有，接着创建对应槽的WorkQueue
+   - 把任务放到WorkQueue的task数组中
+3. 用signalWork方法，唤醒一个空闲线程或者创建一个新的线程来执行任务
+
+上面已经分析完了，外部任务提交主线程所做的一些操作。接着，我们看一下，线程被唤醒或者被创建出来、启动之后进行了哪些操作
+
+#### 3.2 ForkJoinWorkerThread的run()
+
+线程启动后，就会执行它的run方法。我们来看一下run方法里面的逻辑
+
+~~~java
+public void run() {
+    // 由于没有自旋，这里只会执行一次
+    // 先判断自己维护的workQueue是否为空
+    if (workQueue.array == null) { 
+        Throwable exception = null;
+        try {
+            // 空方法，钩子方法，留给子类重写
+            onStart();
+            // 用池的runWorker方法来执行自己维护的workQueue
+            // 这里与上面线程池的逻辑是类似的，也是不能直接调用任务的run方法，而是要在执行任务的run方法前后添加一些线程池相关的逻辑
+            pool.runWorker(workQueue);
+        } catch (Throwable ex) {
+            exception = ex;
+        } finally {
+            try {// 处理异常
+                onTermination(exception);
+            } catch (Throwable ex) {
+                if (exception == null)
+                    exception = ex;
+            } finally {
+                // 走到这，说明该销毁线程了
+                pool.deregisterWorker(this, exception);
+            }
+        }
+    }
+}
+~~~
+
+##### 3.2.1 runWorker(WorkQueue)
+
+这是线程池的方法
+
+~~~java
+final void runWorker(WorkQueue w) {
+    // 因为每个线程的runWorker方法只执行一次。所以这里就是给workQueue的task数组分配控件
+    w.growArray();                  
+    // 拿到seed
+    int seed = w.hint;
+    // 确保seed不为0
+    int r = (seed == 0) ? 1 : seed; 
+    // 起一个自旋
+    for (ForkJoinTask<?> t;;) {
+        // 通过scan方法窃取task
+        if ((t = scan(w, r)) != null)
+            // 用workQueue的runTask来执行这个任务
+            w.runTask(t);
+        // 如果没有窃取到task，那么就让线程阻塞，等待唤醒
+        else if (!awaitWork(w, r))
+            // 如果阻塞线程失败跳出循环
+            break;
+        // 线程阻塞被唤醒后，更新一下seed，重新尝试窃取任务
+        r ^= r << 13; r ^= r >>> 17; r ^= r << 5; // xorshift
+    }
+}
+~~~
+
+这个代码很简单，就是线程启动后，就不断的用scan方法去窃取任务，然后执行这个任务。如果没有窃取到，就阻塞，等待唤醒。
+
+那我们就接着看一下窃取任务的核心方法
+
+###### 3.2.1.1 scan(WorkQueue, int)
+
+~~~java
+/**
+ * 此方法是任务窃取的核心方法
+ * w：是当前线程所绑定的WorkQueue
+ * r：是WorkQueue的hint，hint又是indexSeed += SEED_INCREMENT。总而言之，就是一个很奇怪的数字
+*/
+private ForkJoinTask<?> scan(WorkQueue w, int r) {
+    WorkQueue[] ws; int m;
+    // 先检查WorkQueue[]有没有初始化
+    if ((ws = workQueues) != null && (m = ws.length - 1) > 0 && w != null) {
+        // 拿到WorkQueue的scanState。初始化的时候，这个scanState是这个WorkQueue在WorkQueue[]的下标，是个正奇数。
+        // scanState只有在这个WorkQueue（线程）失活的时候为负
+        int ss = w.scanState;             
+        // 起一个自旋。
+      	// 解释一下这几个变量：
+        // 		origin：  用r这个很怪的数字，随机找的起始下标
+        //		k：       工作索引，从origin下标开始
+        // 		oldSum：  记住上一次扫描探测标记的和，用于和checkSum比较
+        // 		checkSum：记录每一遍探测标记的和 （这个标记就是WorkQueue中base的值）
+        for (int origin = r & m, k = origin, oldSum = 0, checkSum = 0;;) {
+            WorkQueue q; ForkJoinTask<?>[] a; ForkJoinTask<?> t;
+            int b, n; long c;
+            // 取到k下标的WorkQueue为q。尝试偷取它的任务
+            if ((q = ws[k]) != null) {
+                // q不为null，说明这个WorkQueue可能存在任务，能够偷取
+                // 判断一下WorkQueue的task数组是否已经有任务
+                if ((n = (b = q.base) - q.top) < 0 &&
+                    (a = q.array) != null) { 
+                    // 数组已有任务，进入if体，进行偷取
+                    // 计算一下base下标位置的地址
+                    long i = (((a.length - 1) & b) << ASHIFT) + ABASE;
+                    // 拿出base下标处的task
+                    if ((t = ((ForkJoinTask<?>)
+                              U.getObjectVolatile(a, i))) != null &&
+                        q.base == b) {
+                        // task不为null，进入if体
+                        // 有任务能偷取，那么先判断一下自己有没有失活
+                        if (ss >= 0) {
+                            // 如果ss >= 0，说明该WorkQueue（线程）没有失活，进入if体
+                            // 因为base处的task已被变量t保存，以便偷取，所以这里置为null，gc
+                            if (U.compareAndSwapObject(a, i, t, null)) {
+                                // base+1
+                                q.base = b + 1;
+                                // 如果task数组里面还有任务，那么需要signal另外的线程来进行处理
+                                if (n < -1)       
+                                    signalWork(ws, q);
+                                // 返回偷到的任务
+                                return t;
+                            }
+                        }
+                        // 走到这，说明虽然能偷的任务不为null，但是ss < 0，当前WorkQueue（线程）已经失活
+                        // 那么判断一下 oldSum是不是等于0，同时再检测一下自己现在失活没有
+                        else if (oldSum == 0 &&   
+                                 w.scanState < 0)
+                            // 都满足的话，尝试激活ctl记录的栈顶空闲队列（线程）去偷这个任务（自己偷不了，喊别人偷）。 
+                            tryRelease(c = ctl, ws[m & (int)c], AC_UNIT);// 这个方法下面讲。
+                    }
+                    // 走到这，说明：
+                    // 		1.要么是自己偷到的任务是null。（可能被其他线程先偷一步，导致自己偷了空的）
+                    // 		2.要么之前自己失活了，有任务偷不了
+                    // 那么这里就判断一下，看看之前自己是不是失活了
+                    if (ss < 0)                  
+                        //如果之前自己是失活状态，那么更新一下ss。（说不定自己又被其他线程唤醒，scanState这时候为正）
+                        ss = w.scanState;
+                    // 走到这，说明：不管是探测的任务为null也好，自己失活也罢，反正任务是偷失败了
+                    // 那么更新一下相关参数，为重新扫描探测做准备
+                    // 更新一下自己的奇怪随机数
+                    r ^= r << 1; r ^= r >>> 3; r ^= r << 10;
+                    // 重新计算origin
+                    origin = k = r & m;           
+                    // 重置oldSum和checkSum
+                    oldSum = checkSum = 0;
+                    continue;
+                }
+                // 走到这，说明扫描探测的WorkQueue q为null，把checkSum加上一个b（base）的值
+                // 这里因为探测到的q为null，所以b为默认值0
+                checkSum += b;
+            }
+          	// 任务没偷成功，进行下一个if的判断
+            // k+1，判断是否已经探测一圈回到起点
+            if ((k = (k + 1) & m) == origin) {    
+                // 探测了一圈，回到了起点
+                // 判断一下自己的存活状态和探测状态
+                if ((ss >= 0 || (ss == (ss = w.scanState))) &&
+                    oldSum == (oldSum = checkSum)) {
+                    // 如果自己还存活或者自己的状态没有改变，并且自己已经探测了两圈了，而且两圈都没有任务
+                    // 那么判断一下自己是否失活，或者当前WorkQueue是否已经终止
+                    if (ss < 0 || w.qlock < 0)  
+                        // 自己已经失活或者已经终止，那么跳出自旋即可，需要其他操作
+                        break;
+                    // 走到这，说明自己还活着，并且自己扫描探测WorkQueues两遍都没有发现任务
+                    // 那么自己也不能老在那空跑浪费精力，所以把自己灭活，去休息（这里只是从控制信息上面灭活，线程真正的阻塞要等到runWorker方法中，调用的awaitWork方法）
+                    // newScanState，置scanState最高位为1
+                    int ns = ss | INACTIVE;       
+                    // newCtl，保存newScanState和活跃线程数-1
+                    long nc = ((SP_MASK & ns) |
+                               (UC_MASK & ((c = ctl) - AC_UNIT)));
+                    // 然后当前WorkQueue指着之前的栈顶空闲WorkQueue，自己就成了新的栈顶空闲WorkQueue
+                    w.stackPred = (int)c;         
+                    // 更新自己的scanState为newScanState
+                    U.putInt(w, QSCANSTATE, ns);
+                    // 更新ctl
+                    if (U.compareAndSwapLong(this, CTL, c, nc))
+                        // 更新成功的话，把局部ss也更新一下
+                        ss = ns;
+                    else
+                        // 更新失败，要把w的scanState恢复原状
+                        w.scanState = ss;         
+                }
+                // 最后把checkSum重置，再自旋，重新探测一圈，没有任务才能退出自旋，返回null到runWork方法中进行阻塞
+                checkSum = 0;
+            }
+            // 没有的话，因为k已经加1，继续探测
+        }
+    }
+    return null;
+}
+~~~
+
+这个方法很长，也很核心，我们下面来总结一下这个方法的脉络：
+
+- 首先，这个方法主要做的就是：**随机找一个下标为起点，遍历探测WorkQueue[]，如果有WorkQueue，它的任务数组里面有任务，并且自身状态正常，那么就直接偷取，返回**。正常逻辑就是这么简单，但是，还有其他很多情况，比如：**没有任务、刚探测过的槽又被别的线程添加了任务、自身状态不正常**等等，所以需要很多额外的逻辑去处理这些情况。
+  1. 没有任务：通过上面的流程，我们可以看到，没有任务的话，
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
