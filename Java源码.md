@@ -4582,28 +4582,28 @@ private ForkJoinTask<?> scan(WorkQueue w, int r) {
         for (int origin = r & m, k = origin, oldSum = 0, checkSum = 0;;) {
             WorkQueue q; ForkJoinTask<?>[] a; ForkJoinTask<?> t;
             int b, n; long c;
-            // 取到k下标的WorkQueue为q。尝试偷取它的任务
+            // 1. 取到k下标的WorkQueue为q。尝试偷取它的任务
             if ((q = ws[k]) != null) {
                 // q不为null，说明这个WorkQueue可能存在任务，能够偷取
-                // 判断一下WorkQueue的task数组是否已经有任务
+                // 2. 判断一下WorkQueue的task数组是否已经有任务
                 if ((n = (b = q.base) - q.top) < 0 &&
                     (a = q.array) != null) { 
                     // 数组已有任务，进入if体，进行偷取
                     // 计算一下base下标位置的地址
                     long i = (((a.length - 1) & b) << ASHIFT) + ABASE;
-                    // 拿出base下标处的task
+                    // 3. 拿出base下标处的task
                     if ((t = ((ForkJoinTask<?>)
                               U.getObjectVolatile(a, i))) != null &&
                         q.base == b) {
                         // task不为null，进入if体
-                        // 有任务能偷取，那么先判断一下自己有没有失活
+                        // 4. 有任务能偷取，那么先判断一下自己有没有失活
                         if (ss >= 0) {
                             // 如果ss >= 0，说明该WorkQueue（线程）没有失活，进入if体
-                            // 因为base处的task已被变量t保存，以便偷取，所以这里置为null，gc
+                            // 5. 因为base处的task已被变量t保存，以便偷取，所以这里置为null，gc
                             if (U.compareAndSwapObject(a, i, t, null)) {
                                 // base+1
                                 q.base = b + 1;
-                                // 如果task数组里面还有任务，那么需要signal另外的线程来进行处理
+                                // 6. 如果task数组里面还有任务，那么需要signal另外的线程来进行处理
                                 if (n < -1)       
                                     signalWork(ws, q);
                                 // 返回偷到的任务
@@ -4611,7 +4611,7 @@ private ForkJoinTask<?> scan(WorkQueue w, int r) {
                             }
                         }
                         // 走到这，说明虽然能偷的任务不为null，但是ss < 0，当前WorkQueue（线程）已经失活
-                        // 那么判断一下 oldSum是不是等于0，同时再检测一下自己现在失活没有
+                        // 7. 那么判断一下 oldSum是不是等于0，同时再检测一下自己现在失活没有
                         else if (oldSum == 0 &&   
                                  w.scanState < 0)
                             // 都满足的话，尝试激活ctl记录的栈顶空闲队列（线程）去偷这个任务（自己偷不了，喊别人偷）。 
@@ -4620,7 +4620,7 @@ private ForkJoinTask<?> scan(WorkQueue w, int r) {
                     // 走到这，说明：
                     // 		1.要么是自己偷到的任务是null。（可能被其他线程先偷一步，导致自己偷了空的）
                     // 		2.要么之前自己失活了，有任务偷不了
-                    // 那么这里就判断一下，看看之前自己是不是失活了
+                    // 8. 那么这里就判断一下，看看之前自己是不是失活了
                     if (ss < 0)                  
                         //如果之前自己是失活状态，那么更新一下ss。（说不定自己又被其他线程唤醒，scanState这时候为正）
                         ss = w.scanState;
@@ -4639,14 +4639,14 @@ private ForkJoinTask<?> scan(WorkQueue w, int r) {
                 checkSum += b;
             }
           	// 任务没偷成功，进行下一个if的判断
-            // k+1，判断是否已经探测一圈回到起点
+            // 9. k+1，判断是否已经探测一圈回到起点
             if ((k = (k + 1) & m) == origin) {    
                 // 探测了一圈，回到了起点
-                // 判断一下自己的存活状态和探测状态
+                // 10. 判断一下自己的存活状态和探测状态
                 if ((ss >= 0 || (ss == (ss = w.scanState))) &&
                     oldSum == (oldSum = checkSum)) {
                     // 如果自己还存活或者自己的状态没有改变，并且自己已经探测了两圈了，而且两圈都没有任务
-                    // 那么判断一下自己是否失活，或者当前WorkQueue是否已经终止
+                    // 11. 那么判断一下自己是否失活，或者当前WorkQueue是否已经终止
                     if (ss < 0 || w.qlock < 0)  
                         // 自己已经失活或者已经终止，那么跳出自旋即可，需要其他操作
                         break;
@@ -4681,8 +4681,592 @@ private ForkJoinTask<?> scan(WorkQueue w, int r) {
 
 这个方法很长，也很核心，我们下面来总结一下这个方法的脉络：
 
-- 首先，这个方法主要做的就是：**随机找一个下标为起点，遍历探测WorkQueue[]，如果有WorkQueue，它的任务数组里面有任务，并且自身状态正常，那么就直接偷取，返回**。正常逻辑就是这么简单，但是，还有其他很多情况，比如：**没有任务、刚探测过的槽又被别的线程添加了任务、自身状态不正常**等等，所以需要很多额外的逻辑去处理这些情况。
-  1. 没有任务：通过上面的流程，我们可以看到，没有任务的话，
+这个方法主要做的就是：**随机找一个下标为起点，遍历探测WorkQueue[]，如果有WorkQueue，它的任务数组里面有任务，并且自身状态正常，那么就直接偷取，返回**。正常逻辑就是这么简单，但是，还有其他很多情况，比如：**没有任务、刚探测过的槽又被别的线程添加了任务、自身状态不正常**等等，所以需要很多额外的逻辑去处理这些情况。
+
+1. **没有任务**：通过上面的流程，我们可以看到，oldSum = 0的时候为第一遍循环探测，探测完会将checkSum的值给oldSum；那么第二遍的探测，标志是checkSum != 0。如果没有任务，第二遍的checkSum就会与第一遍的值相同，既然没任务，就会进入9. 对自己进行灭活（标记灭活，线程还没有阻塞）。灭活之后，会再循环探测一遍，所以第三遍探测的标志是oldSum  != 0 && 灭活。没有任务的话，checkSum还是等于oldSum，线程进入11. break自旋，最后返回null。
+
+2. **刚探测过的槽又被别的线程添加了任务**：第一遍刚探测完的槽被添加了任务，第二遍探测的时候发现；第二遍刚探测完的槽被添加了任务，等第三遍灭活后探测发现，进行相应的逻辑处理。可以看到，只要添加了任务，在2. if处通过base - top就能发现，那么checkSum这个值到底有什么用呢？
+
+   可以看到每次探测，checkSum += base，说明只有base变了，后面的checkSum才不会等于前面的checkSum。那么我们看一下什么情况下base会变：
+
+   - 另一个线程提交了任务，新建了一个WorkQueue，该WorkQueue的base会初始化，导致当前线程下一圈探测的checkSum与前一圈的不同
+   - 另一个线程提交了任务，创建了一个线程，奇数位新建了一个WorkQueue，导致checkSum变化
+   - 另一个线程提交了任务，但这个任务又被窃取了，这个时候base - top检测不出来，但是base发生变化，checkSum能检测出来
+
+   可以看到上面三种情况，都与探测过程中任务的提交有关，所以当checkSum发生变化的时候，就需要重新再探测一遍，看能不能获取到任务：第二遍checkSum发生了变化，就再进行一次第二遍的探测；第三遍失活后的探测checkSum发生了变化，就再进行一下第三次失活后的探测。
+
+3. **自身状态不正常**：线程灭活后，发现任务会唤醒栈顶线程前来执行任务，自己则通过两遍循环探测，返回null，并阻塞
+
+这个整个逻辑比较复杂，这里只是简单的做一些梳理。
+
+偷取了任务，我们再来看一下，怎么执行的
+
+###### 3.2.1.2 runTask(ForkJoinTask)
+
+~~~java
+// 此方法为WorkQueue的方法
+final void runTask(ForkJoinTask<?> task) {
+    if (task != null) {
+        // 先设置线程状态（线程绑定一个WorkQueue，所以可以不区分），为繁忙
+        scanState &= ~SCANNING; // mark as busy
+        // 执行偷取来任务，并封装结果
+        (currentSteal = task).doExec();
+        U.putOrderedObject(this, QCURRENTSTEAL, null); // release for GC
+        // 执行自己任务队列的任务
+        execLocalTasks();
+        // 拿到自己WorkQueue所属的线程（如果为shared模式，则该值为null）
+        ForkJoinWorkerThread thread = owner;
+        // 记录偷取数
+        if (++nsteals < 0)      // collect on overflow
+            // 数太大越界，就转移到pool的计数器上
+            transferStealCount(pool);
+        // 复位scanState
+        scanState |= SCANNING;
+        if (thread != null)
+            // 钩子方法，一般感觉用不着
+            thread.afterTopLevelExec();
+    }
+}
+~~~
+
+这个方法逻辑比较简单，里面几个简单的方法也就不展开讲了，很容易懂。
+
+###### 3.2.1.3 awaitWork(WorkQueue, int)
+
+~~~java
+/** 
+ * 线程实际上的阻塞就是在这个方法里面进行的。
+ * w：该线程绑定的WorkQueue
+ * r：随机探测种子
+ */
+private boolean awaitWork(WorkQueue w, int r) {
+    // 先判断一下状态
+    if (w == null || w.qlock < 0)                 // w is terminating
+        return false;
+    // 起一个自旋，拿到当前WorkQueue所记录的空闲线程，拿到阻塞前自旋的次数（SPINS一般为0,）
+    for (int pred = w.stackPred, spins = SPINS, ss;;) {
+        // 判断一下该线程在标志位上是否已经失活
+        if ((ss = w.scanState) >= 0)
+            // 没有失活那么不够条件阻塞，直接跳出自旋，返回true
+            break;
+        // 如果在标志位上已经失活，再判断一下，阻塞前需要自旋的次数。
+        else if (spins > 0) {
+            // 如果需要自旋
+            // 更新一下探测种子
+            r ^= r << 6; r ^= r >>> 21; r ^= r << 7;
+            // 对spin--。等自己自旋完（spin == 0）判断一下，是否还要更新一下spins，继续一轮的自旋
+            if (r >= 0 && --spins == 0) {         // randomize spins
+                WorkQueue v; WorkQueue[] ws; int s, j; AtomicLong sc;
+                // 检查当前WorkQueue所记录的空闲线程（标志位已经失活），是否真正阻塞了。
+                // 		是：那么不用更新spins，继续一轮自旋
+                //      否：那么需要更新spins，继续自旋，等待自己前面的线程，先阻塞。
+                if (pred != 0 && (ws = workQueues) != null &&
+                    (j = pred & SMASK) < ws.length &&
+                    (v = ws[j]) != null &&        // see if pred parking
+                    (v.parker == null || v.scanState >= 0))
+                    spins = SPINS;                // continue spinning
+            }
+        }
+        // 不需要自旋或者自旋完毕，会判断这个if，检查自身状态是否正常
+        else if (w.qlock < 0)                     // recheck after spins
+            return false;
+        // 状态正常，也不需要空转自旋了，那么就再判断一下当前线程是否有被中断
+        else if (!Thread.interrupted()) {
+            // 一切条件正常，那么进入这个if进行阻塞操作
+            long c, prevctl, parkTime, deadline;
+            // 计算出活跃线程数
+            int ac = (int)((c = ctl) >> AC_SHIFT) + (config & SMASK);
+            // 	如果线程池状态不正常，返回false
+            if ((ac <= 0 && tryTerminate(false, false)) ||
+                (runState & STOP) != 0)           // pool terminating
+                return false;
+            // 活跃线程没有了且如果自己是栈顶空闲线程
+            if (ac <= 0 && ss == (int)c) {        // is last waiter
+                // 构造出前一个ctl：活跃线程数+1 | 栈顶第二个scanState
+                prevctl = (UC_MASK & (c + AC_UNIT)) | (SP_MASK & pred);
+                // 拿到 并行度 - 总线程数
+                int t = (short)(c >>> TC_SHIFT);  // shrink excess spares
+                // 如果 并行度 - 总线数 > 2，并且更换ctl成功
+                // 		这里解释一下：增加线程的时候会有判断，当总线程数 == 并行度，就不再增减线程了。所以一般不会出现
+                //      t > 0的情况。但是如果出现了并发问题（？）几个线程同时创建了几个线程，那么线程数就可能超出并行度
+                //		度，所以就需要把ctl设置为前一个ctl，并且返回false，让这个线程不要自旋、阻塞，而是销毁掉
+                if (t > 2 && U.compareAndSwapLong(this, CTL, c, prevctl))
+                    return false;                 // else use timed wait
+             	// 设置超时等待时间。为什么要设置这个超时等待时间呢？因为这两句话在活跃线程 <= 0的if里。因为活跃线程没有
+                // 所以自己不能睡太久
+                parkTime = IDLE_TIMEOUT * ((t >= 0) ? 1 : 1 - t);
+                deadline = System.nanoTime() + parkTime - TIMEOUT_SLOP;
+            }
+            // 如果还有活跃线程
+            else
+                // 那么不需要超时等待了
+                prevctl = parkTime = deadline = 0L;
+            // 拿到当前线程
+            Thread wt = Thread.currentThread();
+            // 放置BLOCKER，blocker意思是：线程阻塞在谁身上
+            U.putObject(wt, PARKBLOCKER, this);   // emulate LockSupport
+            // 设置WorkQueue的parker，标志着线程也真正阻塞了（标志位灭活 -> 线程阻塞）
+            w.parker = wt;
+            // 重新检查一遍
+            if (w.scanState < 0 && ctl == c)      // recheck before park
+                // park线程。
+                U.park(false, parkTime);
+            // 线程被唤醒之后，从这开始执行。置parker为null
+            U.putOrderedObject(w, QPARKER, null);
+            // 置parkBlock为null
+            U.putObject(wt, PARKBLOCKER, null);
+            // 如果自己的状态已经正常，就break
+            if (w.scanState >= 0)
+                break;
+            // 走到这说明当前线程不是被唤醒的，而是，线程数溢出，自己阻塞一定时间自己醒来的
+            // parkTime != 0也说明线程有多余，再判断一下自己醒来的时间是否超过自己所需要阻塞的时间
+            if (parkTime != 0L && ctl == c &&
+                deadline - System.nanoTime() <= 0L &&
+                // CAS设置ctl为前一个ctl
+                U.compareAndSwapLong(this, CTL, c, prevctl))
+                // 返回false，让当前线程销毁
+                return false;                     // shrink pool
+        }
+    }
+    // 线程正常被唤醒后，返回true
+    return true;
+}
+
+~~~
+
+看完了awaitWork方法后，我们再回到runWorker方法中，看看返回的true和false究竟是怎么控制线程是继续执行还是销毁
+
+~~~java
+// runworker方法的部分：
+for (ForkJoinTask<?> t;;) {
+    // 通过scan方法窃取task
+    if ((t = scan(w, r)) != null)
+        // 用workQueue的runTask来执行这个任务
+        w.runTask(t);
+    // 如果没有窃取到task，那么就让线程阻塞，等待唤醒
+    else if (!awaitWork(w, r))
+        // 如果阻塞线程失败跳出循环
+        break;
+    // 线程阻塞被唤醒后，更新一下seed，重新尝试窃取任务
+    r ^= r << 13; r ^= r >>> 17; r ^= r << 5; // xorshift
+}
+
+// run方法的部分：
+	pool.runWorker(workQueue);
+	} catch (Throwable ex) {
+    	exception = ex;
+	} finally {
+    	try {// 处理异常
+        	onTermination(exception);
+    	} catch (Throwable ex) {
+        	if (exception == null)
+            	exception = ex;
+    	} finally {
+        	// 走到这，说明该销毁线程了
+        	pool.deregisterWorker(this, exception);
+    	}
+~~~
+
+可以看到
+
+- 返回true的话，线程就继续循环，窃取任务执行
+- 返回false的话，线程会跳出循环，然后返回到run方法，最后执行deregisterWorker方法
+
+##### 3.2.2 deregisterWorker(ForkJoinWorkerThread, Throwable)
+
+~~~java
+final void deregisterWorker(ForkJoinWorkerThread wt, Throwable ex) {
+    WorkQueue w = null;
+    // 删除自己所绑定的WorkQueue
+    if (wt != null && (w = wt.workQueue) != null) {
+        WorkQueue[] ws;                           // remove index from array
+        int idx = w.config & SMASK;
+        int rs = lockRunState();
+        if ((ws = workQueues) != null && ws.length > idx && ws[idx] == w)
+            ws[idx] = null;
+        unlockRunState(rs, rs & ~RSLOCK);
+    }
+    long c;                                       // decrement counts
+	// CAS修改ctl
+    do {} while (!U.compareAndSwapLong
+                 (this, CTL, c = ctl, ((AC_MASK & (c - AC_UNIT)) |
+                                       (TC_MASK & (c - TC_UNIT)) |
+                                       (SP_MASK & c))));
+    // 删掉自己WorkQueue里面的任务，置任务状态为cancel
+    if (w != null) {
+        w.qlock = -1;                             // ensure set
+        w.transferStealCount(this);
+        w.cancelAll();                            // cancel remaining tasks
+    }
+    // 自旋，做扫尾工作
+    for (;;) {                                    // possibly replace
+        WorkQueue[] ws; int m, sp;
+        // 如果线程池terminating了，直接break
+        if (tryTerminate(false, false) || w == null || w.array == null ||
+            (runState & STOP) != 0 || (ws = workQueues) == null ||
+            (m = ws.length - 1) < 0)              // already terminating
+            break;
+        // 如果还有空闲线程，帮忙唤醒一下
+        if ((sp = (int)(c = ctl)) != 0) {         // wake up replacement
+            if (tryRelease(c, ws[sp & m], AC_UNIT))
+                break;
+        }
+        // 没有空闲线程，但是需要添加线程的话，帮忙添加一下
+        else if (ex != null && (c & ADD_WORKER) != 0L) {
+            tryAddWorker(c);                      // create replacement
+            break;
+        }
+        // 啥也不用，直接break
+        else                                      // don't need replacement
+            break;
+    }
+    if (ex == null)                               // help clean on way out
+        ForkJoinTask.helpExpungeStaleExceptions();
+    else                                          // rethrow
+        ForkJoinTask.rethrow(ex);
+}
+~~~
+
+#### 3.3 小结
+
+到这，我们就梳理完了：一个任务从外部提交，放置到偶数槽，然后提交任务线程创建一个工作线程并且绑定一个奇数槽位，工作线程，循环探测偷取任务，并执行的全过程。接下来，我们就来看一下，一个任务如果粒度太大，需要fork划分成小任务的时候，fork方法到底做了什么。
+
+#### 3.4 fork()
+
+我们再来看看前面我们的小例子，看看task粒度过大时，是怎么fork的
+
+~~~java
+@Override
+protected Integer compute() {
+    int sum  = 0;
+    boolean canCompute = (end - start) < 2;
+    if(canCompute){
+        for (int i = start; i <= end; i++){
+            sum += i;
+        }
+    }else{
+        int middle = (start + end)/2;
+        CounterTask leftTask = new CounterTask(start, middle);
+        CounterTask rightTask = new CounterTask(middle+1, end);
+        leftTask.fork();
+        rightTask.fork();
+        int leftRes = leftTask.join();
+        int rightRes = rightTask.join();
+        sum = leftRes+ rightRes;
+    }
+    return sum;
+}
+~~~
+
+可以看到，我们的任务逻辑是重写在compute方法里面的，当任务粒度过大时，就会new两个小的task，并用这两个小task调用一下fork方法。由此，我们大概可以猜出来，这个fork方法应该是类似于ForkJoinPool的添加方法，把任务提交到线程池里面。下面我们就来看看fork方法里面具体的逻辑
+
+~~~java
+
+/**
+ * 这个为ForkJoinTask里面的方法
+*/
+public final ForkJoinTask<V> fork() {
+    Thread t;
+    // 先判断一下当前线程是否是ForkJoinWorkerThread类。如果是这个类，说明是内部提交
+    if ((t = Thread.currentThread()) instanceof ForkJoinWorkerThread)
+        // 拿到当前线程绑定WorkQueue，push这个任务到这个WorkQueue的array中
+        ((ForkJoinWorkerThread)t).workQueue.push(this);
+    else
+        // 如果不是ForkJoinWorkerThread类型，那么进行外部提交
+        ForkJoinPool.common.externalPush(this);
+    return this;
+}
+~~~
+
+##### 3.4.1 push(ForkJoinTask)
+
+~~~java
+/**
+ * 这个为WorkQueue类的方法
+ * push这个任务到WorkQueue中
+*/
+final void push(ForkJoinTask<?> task) {
+    ForkJoinTask<?>[] a; ForkJoinPool p;
+    int b = base, s = top, n;
+    // 判断一下当前array是否已经被初始化了
+    if ((a = array) != null) {    // ignore if queue removed
+        // 拿到掩码
+        int m = a.length - 1;     // fenced write for task visibility
+        // 放置task
+        U.putOrderedObject(a, ((m & s) << ASHIFT) + ABASE, task);
+        // top+1
+        U.putOrderedInt(this, QTOP, s + 1);
+        // 判断一下，如果n <= 1，说明当前array里面的任务数 1 <= x <= 2
+        if ((n = s - b) <= 1) {
+            if ((p = pool) != null)
+                // 所以需要signal一个work
+                p.signalWork(p.workQueues, this);
+        }
+        // 如果 n过大
+        else if (n >= m)
+            // 对数组进行扩容
+            growArray();
+    }
+}
+~~~
+
+可以看到内部提交，也就是把任务放到调用fork方法线程所绑定的WorkQueue中，后面的signalWork就与上面我们所讲的一致了。所以fork方法也挺简单的。
+
+#### 3.5 join()
+
+fork完了之后再次回到我们之前的小例子
+
+~~~java
+CounterTask leftTask = new CounterTask(start, middle);
+CounterTask rightTask = new CounterTask(middle+1, end);
+leftTask.fork();
+rightTask.fork();
+int leftRes = leftTask.join();
+int rightRes = rightTask.join();
+~~~
+
+可以看到fork完了之后，接着就是join了，并且有返回值。看到这里我们其实就可以猜测，task调用join，会等待自己的状态变为完成状态，然后获取返回值。那我们就看看join方法具体的代码
+
+~~~java
+public final V join() {
+    int s;
+    // 先调用doJoin()方法，返回值 & DONE_MASK，看看执行状态是不是NORMAL正常的
+    if ((s = doJoin() & DONE_MASK) != NORMAL)
+        // 不正常就报告异常
+        reportException(s);
+    // 正常就调用getRawResult()方法，返回原始结果
+    return getRawResult();
+}
+~~~
+
+<img src="Java%E6%BA%90%E7%A0%81.assets/ForkJoinTask-join().png" style="zoom:80%;" />
+
+##### 3.5.1 doJoin()
+
+~~~java
+private int doJoin() {
+    int s; Thread t; ForkJoinWorkerThread wt; ForkJoinPool.WorkQueue w;
+    // 这个三元运算符写得比较复杂。我们在下面解析。
+    return (s = status) < 0 ? s :
+    ((t = Thread.currentThread()) instanceof ForkJoinWorkerThread) ?
+        (w = (wt = (ForkJoinWorkerThread)t).workQueue).
+        tryUnpush(this) && (s = doExec()) < 0 ? s :
+    wt.pool.awaitJoin(w, this, 0L) :
+    externalAwaitDone();
+}
+~~~
+
+这里有必要先看一下ForkJoinTask的任务状态。在ForkJoinTask类中，任务状态是由status标志的，主要有以下几类
+
+- **初始状态**：status == 0
+- **完成状态**：status < 0。完成状态又有如下几种细分：
+  - NORMAL（0xf0000000）：正常完成状态，< 0
+  - CANCELLED（0xc0000000）：取消状态，< NORMAL
+  - EXCEPTIONAL（0x80000000）：异常状态，< CANCELLED
+- **通知状态**：status == SIGNAL（0x00010000） > 0
+
+---
+
+我们再来看一下上面的三元运算：
+
+**status < 0 ?**
+
+- **是**：任务已经是完成状态，所以直接返回status就行，不用再做处理
+- **否**：任务还没有被处理过，当前线程就不等其他线程而是自己来处理。判断一下当前线程是否是ForkJoinWorkerThread类型
+
+  - **是**：当前线程是ForkJoinPool的内部线程，可以处理任务
+
+    先调用tryUnpush方法把这个任务从任务队列移除，然后调用doExec方法执行这任务。执行之后，返回任务状态。
+    - **任务状态为完成态**：返回任务状态s
+    - **任务状态为初始态**：tryUnpush移除任务失败，或者执任务失败，任务就还是初始态。调用池的awaitJoin方法。
+
+  - **否**：当前线程是外部线程。例在main方法中仅有`new CounterTask(1,2).join()`，没有用到池，那么这个线程就是普通线程
+
+    那么就调用Task的externalAwaitDone方法，意为外部提交等待完成方法。
+
+tryUnpush方法很简单，就是把当前线程所绑定的这个WorkQueue中的这个task用CAS移除，但是需要注意的是，为什么会移除失败？因为**当当前任务不在top-1位的时候，就会移除失败。所以在官方文档中建议了我们对ForkJoinTask任务的调用顺序，一对 fork-join操作一般按照如下顺序调用：`a.fork(); b.fork(); b.join(); a.join();`。因为任务 b 是后面进入队列，也就是说它是在栈顶的（top-1 位），在它`fork()`之后直接调用`join()`就可以直接执行而不会调用`ForkJoinPool.awaitJoin`方法去等待。**）。下面看看doExec方法
+
+###### 3.5.1.1 doExec()
+
+~~~java
+/**
+ * ForkJoinTask类中的方法
+ * 只要执行了这个方法，任务的状态就一定会变成完成态
+*/
+final int doExec() {
+    int s; boolean completed;
+    // 判断一下任务状态。< 0，直接返回
+    if ((s = status) >= 0) {
+        // >= 0就执行
+        try {
+            // 完成标记
+            completed = exec();
+        } catch (Throwable rex) {
+            // 出现异常的话，设置任务状态为EXCEPTIONAL，并返回
+            return setExceptionalCompletion(rex);
+        }
+        // 已完成，则设置任务状态为NORMAL，正常完成标记，最后返回	
+        if (completed)
+            s = setCompletion(NORMAL);
+    }
+    return s;
+}
+~~~
+
+###### 3.5.1.2 awaitJoin(WorkQueue, ForkJoinTask, long)
+
+~~~java
+/**
+ * ForkJoinPool中的方法
+ * w：当前线程绑定的WorkQueue
+ * task：tryUnpush方法没有移除掉的任务
+ * deadline：超时等待的时间
+*/
+final int awaitJoin(WorkQueue w, ForkJoinTask<?> task, long deadline) {
+    int s = 0;
+    if (task != null && w != null) {
+        // 因为有新任务join了，所以需要将currentJoin赋值给prevJoin
+        ForkJoinTask<?> prevJoin = w.currentJoin;
+        // 把currentJoin置为当前task
+        U.putOrderedObject(w, QCURRENTJOIN, task);
+        // 判断任务类型是不是CountedCompleter类型，是的话就强转一下，赋值给cc
+        CountedCompleter<?> cc = (task instanceof CountedCompleter) ?
+            (CountedCompleter<?>)task : null;
+        // 起一个自旋
+        for (;;) {
+            // 如果任务状态已完成，返回
+            if ((s = task.status) < 0)
+                break;
+            // 如果任务类型是CountedCompleter类型
+            if (cc != null)
+                // 则调用这个方法，帮助完成这个任务
+                helpComplete(w, cc, 0);
+            // 如果不是那个类型
+ 			// 尝试执行
+            else if (w.base == w.top || w.tryRemoveAndExec(task))
+                helpStealer(w, task); // 队列为空或执行失败，任务可能被偷，帮助偷取者执行该任务
+            //已经完成|取消|异常，跳出循环
+            if ((s = task.status) < 0)	
+                break;
+            // 计算任务等待时间
+            long ms, ns;
+            // 如果deadline == 0，那么不需要等待
+            if (deadline == 0L)
+                ms = 0L;
+            // 如果deadline != 0，计算一下需要等待多久
+            else if ((ns = deadline - System.nanoTime()) <= 0L)
+                // 需要等待时间 <= 0，直接break，不用等了
+                break;
+            // 需要等待的话，把纳秒值转成毫秒
+            else if ((ms = TimeUnit.NANOSECONDS.toMillis(ns)) <= 0L)
+                ms = 1L;
+            // 执行补偿操作（补偿操作什么意思：因为线程前面没有等待，现在把这个等待给补上）
+            // tryCompensate方法做线程等待的一些前置辅助工作，返回值为：线程是否能够阻塞
+            if (tryCompensate(w)) {
+                // 线程阻塞在task上面ms毫秒
+                task.internalWait(ms);
+                // 阻塞完，再把活跃线程数+1
+                U.getAndAddLong(this, CTL, AC_UNIT);
+            }
+        }
+        // 把currentJoin再换回前面的task
+        U.putOrderedObject(w, QCURRENTJOIN, prevJoin);
+    }
+    // 返回任务状态
+    return s;
+}
+~~~
+
+**总结：** 如果当前 join 任务不在Worker等待队列的`top-1`位，或者任务执行失败，调用此方法来帮助执行或阻塞当前 join 的任务。函数执行流程如下：
+
+- 由于每次调用`awaitJoin`都会优先执行当前join的任务，所以首先会更新`currentJoin`为当前join任务；
+- 进入自旋：
+  1. 首先检查任务是否已经完成（通过`task.status < 0`判断），如果给定任务执行完毕|取消|异常 则跳出循环返回执行状态`s`；
+  2. 如果是 CountedCompleter 任务类型，调用`helpComplete`方法来完成join操作（后面笔者会开新篇来专门讲解CountedCompleter，本篇暂时不做详细解析）；
+  3. 非 CountedCompleter 任务类型调用`WorkQueue.tryRemoveAndExec`尝试执行任务；
+  4. 如果给定 WorkQueue 的等待队列为空或任务执行失败，说明任务可能被偷，调用`helpStealer`帮助偷取者执行任务（也就是说，偷取者帮我执行任务，我去帮偷取者执行它的任务）；
+  5. 再次判断任务是否执行完毕（`task.status < 0`），如果任务执行失败，计算一个等待时间准备进行补偿操作；
+  6. 调用`tryCompensate`方法为给定 WorkQueue 尝试执行补偿操作。在执行补偿期间，如果发现 资源争用|池处于unstable状态|当前Worker已终止，则调用`ForkJoinTask.internalWait()`方法等待指定的时间，任务唤醒之后继续自旋。
+
+3.5.1.2.1 tryRemoveAndExec(ForkJoinTask)
+
+~~~java
+/**
+ * 为WorkQueue类中的方法
+*/
+final boolean tryRemoveAndExec(ForkJoinTask<?> task) {
+    ForkJoinTask<?>[] a; int m, s, b, n;
+    if ((a = array) != null && (m = a.length - 1) >= 0 &&
+        task != null) {
+        while ((n = (s = top) - (b = base)) > 0) {
+            // 自旋，从top位往base位处查找
+            for (ForkJoinTask<?> t;;) {      // traverse from s to b
+                long j = ((--s & m) << ASHIFT) + ABASE;  // 计算地址
+                if ((t = (ForkJoinTask<?>)U.getObject(a, j)) == null)  // 拿到指定位置task（从top递减查找）
+                    return s + 1 == top;     // shorter than expected
+                // 如果探测到的任务等于传进来的任务
+                else if (t == task) {
+                    // 设一个标志
+                    boolean removed = false;
+                    // 检查一下当前任务是不是在栈顶
+                    if (s + 1 == top) {      // pop
+                        // 是栈顶
+                        // 那么pop任务
+                        if (U.compareAndSwapObject(a, j, task, null)) {
+                            // top-1
+                            U.putOrderedInt(this, QTOP, s);
+                            // 移除标志置true
+                            removed = true;
+                        }
+                    }
+                    // 如果传进来的任务不是在栈顶
+                    // 判断一下base有没有改变
+                    else if (base == b)      // replace with proxy
+                        // 没有改变的话，就把这个任务所在的位置放一个空任务，做占位符
+                        removed = U.compareAndSwapObject(
+                        a, j, task, new EmptyTask());
+                    // 成功移除掉任务后
+                    if (removed)
+                        // 执行这个任务
+                        task.doExec();
+                    // 退出自旋
+                    break;
+                }
+                // 如果探测的任务!=传进来的任务
+                // 那么判断一下探测到的任务是否完成、且在栈顶
+                else if (t.status < 0 && s + 1 == top) {
+                    // 满足的话，顺手把这个任务移除掉
+                    if (U.compareAndSwapObject(a, j, t, null))
+                        U.putOrderedInt(this, QTOP, s);
+                   	// 移除成功，跳出for循环
+                    break;                  // was cancelled
+                }
+                //如果任务队列遍历完，则返回
+                if (--n == 0)
+                    return false;
+            }
+            // 任务已经执行
+            if (task.status < 0)
+                return false;
+        }
+    }
+    return true;
+}
+~~~
+
+tryRemoveAndExec如果找到这个任务会直接执行，然后用一个空任务放入原来的位置。如果没有找到这个任务说明任务被某个队列线程偷取了，会调用helpStealer方法去寻找这个小偷。在helpStealer中只会遍历奇数槽位的队列，因为也只有奇数槽位的队列才会有线程去偷取任务。如果小偷没有执行到自己队列的任务，会帮小偷执行任务。如果自己队列有任务没有执行完会退出方法，然后会进行一次补偿后阻塞线程等待任务完成唤醒。
+
+**注意**：注意返回的参数：如果任务队列为空或者任务**未**执行完毕返回`true`；任务执行完毕返回`false`。因为未执行完毕，说明没有找到任务，可能是被偷了，所以需要返回到awaitJoin方法中，helpStealer。如果自己已经执行完毕了，返回false，说明不需要helpStealer
+
+
+
+
+
+
+
+
+
+
 
 
 
