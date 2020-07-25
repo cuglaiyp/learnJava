@@ -5132,7 +5132,7 @@ final int awaitJoin(WorkQueue w, ForkJoinTask<?> task, long deadline) {
         // 判断任务类型是不是CountedCompleter类型，是的话就强转一下，赋值给cc
         CountedCompleter<?> cc = (task instanceof CountedCompleter) ?
             (CountedCompleter<?>)task : null;
-        // 起一个自旋
+        // 起一个自旋。直到任务完成退出。
         for (;;) {
             // 如果任务状态已完成，返回
             if ((s = task.status) < 0)
@@ -5160,7 +5160,7 @@ final int awaitJoin(WorkQueue w, ForkJoinTask<?> task, long deadline) {
             // 需要等待的话，把纳秒值转成毫秒
             else if ((ms = TimeUnit.NANOSECONDS.toMillis(ns)) <= 0L)
                 ms = 1L;
-            // 执行补偿操作（补偿操作什么意思：因为线程前面没有等待，现在把这个等待给补上）
+            // 执行补偿操作（补偿操作什么意思：因为经过前面我们可以知道，任务没有执行完毕，所以这个地方需要挂起自己，等待被偷取任务的结果。自己被挂起了，那么算力损失了，所以需要补偿。例如：创建一个线程、唤醒一个线程等）
             // tryCompensate方法做线程等待的一些前置辅助工作，返回值为：线程是否能够阻塞
             if (tryCompensate(w)) {
                 // 线程阻塞在task上面ms毫秒
@@ -5258,9 +5258,201 @@ tryRemoveAndExec如果找到这个任务会直接执行，然后用一个空任�
 
 **注意**：注意返回的参数：如果任务队列为空或者任务**未**执行完毕返回`true`；任务执行完毕返回`false`。因为未执行完毕，说明没有找到任务，可能是被偷了，所以需要返回到awaitJoin方法中，helpStealer。如果自己已经执行完毕了，返回false，说明不需要helpStealer
 
+3.5.1.2.2 helpStealer(WorkQueue, ForkJoinTask)
 
+~~~java
+/**
+ * ForkJoinPool中的方法
+ * w：当前线程所绑定的WorkQueue
+ * task：执行join的task
+*/
+private void helpStealer(WorkQueue w, ForkJoinTask<?> task) {
+    WorkQueue[] ws = workQueues;
+    // checkSum、oldSum参考scan方法里面的作用
+    int oldSum = 0, checkSum, m;
+    // 先做一下条件判断
+    if (ws != null && (m = ws.length - 1) >= 0 && w != null &&
+        task != null) {
+        // 自旋
+        do {                                       // restart point
+            checkSum = 0;                          // for stability check
+            ForkJoinTask<?> subtask;
+            WorkQueue j = w, v;                    // v is subtask stealer
+            // 这里是一个go-to语句
+            descent: for (subtask = task; subtask.status >= 0; ) {
+                //确保h为奇数，k每次增加2，h+k则是每次都为奇数
+                for (int h = j.hint | 1, k = 0, i; ; k += 2) {
+                   	// 扫描索引超出数组长度，找不到，跳出go-to
+                    if (k > m)                     // can't find stealer
+                        break descent;
+                    // 取出h+k位置的WorkQueue
+                    if ((v = ws[i = (h + k) & m]) != null) {
+                        // 如果取出的这个WorkQueue的当前偷取的任务，就等于我们这个任务，那么小偷就是它
+                        if (v.currentSteal == subtask) {
+                            // 自己用hint记住这个小偷下标，跳出循环
+                            j.hint = i;
+                            break;
+                        }
+                        // 每探测一次，没找到的话，就更新一下chekcSum
+                        checkSum += v.base;
+                    }
+                }
+                // 到这，就开始帮偷取者执行任务了
+                for (;;) {                         // help v or descend
+                    ForkJoinTask<?>[] a; int b;
+                    // 先用之前的checkSum加上偷取者的base。因为上面找到偷取者就break了，没加上
+                    checkSum += (b = v.base);
+                    // 拿到小偷当前join的task
+                    ForkJoinTask<?> next = v.currentJoin;
+                    // 如果这个任务已经完成                    或者
+                    // 自己当前join的任务 != 这个任务了  或者
+                    // 偷取者当前偷取的任务 != 这个任务了 
+                    // 那么就跳出go-to重新找
+                    if (subtask.status < 0 || j.currentJoin != subtask ||
+                        v.currentSteal != subtask) // stale
+                        break descent;
+                    // 如果小偷没有任务了
+                    if (b - v.top >= 0 || (a = v.array) == null) {
+                        // 判断一下小偷有没有正在join的任务
+                        if ((subtask = next) == null)
+                            // 如果没有，说明小偷没有任务了，那么当前任务就又被别的偷了。需要跳出go-to重新查找新的小偷
+                            break descent;
+                        // 如果小偷有正在join的任务。currentJoin是在awaitJoin方法中设置的，currentJoin的任务理论上，没被偷的话，还存在于自己的数组中。
+                        // 而这里，偷取者没有任务了，但是还有currentJoin，所以，偷取者的任务又被别人偷了。
+                        // 那么这里，就需要再去找偷取者的偷取者
+                        j = v;
+                        break;
+                    }
+                    // 走到这，说明偷取者还有任务，或者偷取者的偷取者还有任务
+                    // 计算base的地址
+                    int i = (((a.length - 1) & b) << ASHIFT) + ABASE;
+                    // 拿到base处的任务
+                    ForkJoinTask<?> t = ((ForkJoinTask<?>)
+                                         U.getObjectVolatile(a, i));
+                    if (v.base == b) {
+                        // base处的任务为null
+                        if (t == null)             // stale
+                            break descent;
+                        // 置base处的任务为null
+                        if (U.compareAndSwapObject(a, i, t, null)) {
+                            // base + 1
+                            v.base = b + 1;
+                            // 获取调用者偷来的任务
+                            ForkJoinTask<?> ps = w.currentSteal;
+                            int top = w.top;
+                            //首先更新自己workQueue的currentSteal为偷取者的base任务，然后执行该任务
+                            //然后通过检查top来判断给定workQueue是否有自己的任务，如果有，
+                            // 则依次弹出任务(LIFO)->更新currentSteal->执行该任务（注意这里是自己偷自己的任务执行）
+                            do {
+                                U.putOrderedObject(w, QCURRENTSTEAL, t);
+                                t.doExec();        // clear local tasks too
+                            } while (task.status >= 0 &&
+                                     w.top != top &&    // 内部有自己的任务，依次弹出执行
+                                     (t = w.pop()) != null);
+                            // 还原给定workQueue的currentSteal
+                            U.putOrderedObject(w, QCURRENTSTEAL, ps);
+                            // 给定workQueue有自己的任务了，帮助结束，返回
+                            if (w.base != w.top)
+                                return;            // can't further help
+                        }
+                    }
+                }
+            }
+        } while (task.status >= 0 && oldSum != (oldSum = checkSum));
+    }
+}
+~~~
 
+**总结：** 如果队列为空或任务执行失败，说明任务可能被偷，调用此方法来帮助偷取者执行任务。基本思想是：偷取者帮助我执行任务，我去帮助偷取者执行它的任务。
+ 函数执行流程如下：
 
+1. 循环定位偷取者，由于Worker是在奇数索引位，所以每次会跳两个索引位。定位到偷取者之后，更新调用者 WorkQueue 的`hint`为偷取者的索引，方便下次定位；
+2. 定位到偷取者后，开始帮助偷取者执行任务。从偷取者的`base`索引开始，每次偷取一个任务执行。在帮助偷取者执行任务后，如果调用者发现本身已经有任务（`w.top != top`），则依次弹出自己的任务(LIFO顺序)并执行（也就是说自己偷自己的任务执行）。
+
+3.5.1.2.3 tryCompensate(WorkQueue)
+
+~~~java
+private boolean tryCompensate(WorkQueue w) {
+    boolean canBlock;
+    WorkQueue[] ws; long c; int m, pc, sp;
+    // 判断池状态。异常的话，返回false
+    if (w == null || w.qlock < 0 ||           // caller terminating
+        (ws = workQueues) == null || (m = ws.length - 1) <= 0 ||
+        (pc = config & SMASK) == 0)           // parallelism disabled
+        canBlock = false;
+    // 状态正常。如果有空闲线程，那么返回true，让当前线程挂起。并且唤醒空闲线程，以作补偿算力损失。
+    else if ((sp = (int)(c = ctl)) != 0)      // release idle worker
+        canBlock = tryRelease(c, ws[sp & m], 0L);
+	// 没有空闲线程
+    else {
+        int ac = (int)(c >> AC_SHIFT) + pc;   // 活跃线程数  
+        int tc = (short)(c >> TC_SHIFT) + pc; // 总线程数
+        int nbusy = 0;                        // validate saturation
+        for (int i = 0; i <= m; ++i) {        // two passes of odd indices
+            WorkQueue v;
+            if ((v = ws[((i << 1) | 1) & m]) != null) {  // 取奇数位索引
+                if ((v.scanState & SCANNING) != 0)       // 找到线程空闲，则跳出
+                    break;
+                ++nbusy;    // 线程忙碌，则记录一下
+            }
+        }
+        // 查找到的忙碌线程数 != 总线程数的两倍（这逻辑硬是没懂）
+        // 或者ctl改变，那么当前线程不用阻塞
+        if (nbusy != (tc << 1) || ctl != c)
+            canBlock = false;                 // unstable or stale
+        // 如果
+        //    总线线程数 >= 并行度 && 活跃线程数 > 1 && 自己任务没有任务了
+        // 那么 不需要补偿算力（线程过多，无法添加）。自己放心挂起等待自己被偷的join任务的结果就好
+        else if (tc >= pc && ac > 1 && w.isEmpty()) {
+            long nc = ((AC_MASK & (c - AC_UNIT)) |
+                       (~AC_MASK & c));       // uncompensated
+            canBlock = U.compareAndSwapLong(this, CTL, c, nc);
+        }
+        // 如果总线程数过大，抛出异常
+        else if (tc >= MAX_CAP ||
+                 (this == common && tc >= pc + commonMaxSpares))
+            throw new RejectedExecutionException(
+            "Thread limit exceeded replacing blocked worker");
+        // 到这说明 自己休息了，算力会损失。所以需要补偿。有如下几种情况
+        // 	   - 总线程数 > 并行度，但是没有活跃线程数、或者自己还有任务：需要创建新的线程，来执行自己的任务（这个地方就会导致线程总数超过并行度）
+        //     - 总线程数正常，有活跃线程数，自己没有任务：也需要创建（一赠一减嘛）
+        // 创建一个新的线程来补偿
+        else {                                // similar to tryAddWorker
+            boolean add = false; int rs;      // CAS within lock
+            long nc = ((AC_MASK & c) |
+                       (TC_MASK & (c + TC_UNIT)));
+            if (((rs = lockRunState()) & STOP) == 0)
+                add = U.compareAndSwapLong(this, CTL, c, nc);
+            unlockRunState(rs, rs & ~RSLOCK);
+            canBlock = add && createWorker(); // throws on exception
+        }
+    }
+    return canBlock;
+}
+~~~
+
+**总结：** 具体的执行看源码及注释，这里我们简单总结一下需要和不需要补偿的几种情况：
+
+- 需要补偿：
+  - 调用者队列不为空，并且有空闲工作线程，这种情况会唤醒空闲线程（调用`tryRelease`方法）
+  - 池尚未停止，活跃线程数不足，这时会新建一个工作线程（调用`createWorker`方法）
+- 不需要补偿：
+  - 调用者已终止或池处于不稳定状态
+  - 总线程数大于并行度 && 活动线程数大于1 && 调用者任务队列为空
+
+到这，我们的join方法就说完了。
+
+#### 3.6 总结 
+
+ForkJoin框架内部设计相当复杂，只需要理解大致思路即可。
+
+**在网上发现一篇能帮助理解ForkJoin框架原理的博文，一定要看：[指北 | 谈谈ForkJoin框架的设计与实现](https://blog.csdn.net/Monica2333/article/details/106172279)**
+
+参考：
+
+[JUC源码分析-线程池篇（五）：ForkJoinPool - 2](https://www.jianshu.com/p/6a14d0b54b8d)
+
+[Executor（五）：ForkJoinPool详解 jdk1.8](https://blog.csdn.net/LCBUSHIHAHA/article/details/104449454)
 
 
 
@@ -5999,7 +6191,7 @@ private static final class SizedRefSortingSink<T> extends AbstractRefSortingSink
 
 **补**：补一个流的代码
 
-~~~Java
+~~~fJava
 // 好好研究这个代码，很有价值
 Arrays.stream(nums)
     .boxed()
@@ -6018,7 +6210,7 @@ Arrays.stream(nums)
     .orElse("0");
 ~~~
 
-
+**注：**并行流使用了[ForkJoin](#Fork/Join框架)框架
 
 ## Spliterator
 
