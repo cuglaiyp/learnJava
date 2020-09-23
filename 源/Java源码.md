@@ -5446,7 +5446,7 @@ private boolean tryCompensate(WorkQueue w) {
 
 ForkJoin框架内部设计相当复杂，只需要理解大致思路即可。
 
-**在网上发现一篇能帮助理解ForkJoin框架原理的博文，一定要看：[指北 | 谈谈ForkJoin框架的设计与实现](https://blog.csdn.net/Monica2333/article/details/106172279)**
+**在网上发现一篇能帮助理解ForkJoin框架原理的博文，一定要看：[指北 | 谈谈ForkJoin框架的设计与实现](D:\TyporaDocument\Java\谈谈ForkJoin框架的设计与实现.md)**
 
 参考：
 
