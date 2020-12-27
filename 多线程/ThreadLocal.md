@@ -79,7 +79,7 @@ protected T initialValue() {
 
 `threadLocal.get()`底层逻辑就是：
 
-获取当前线程的内部map———>用自己为key取出对应的值———>如果这个map没有初始化或者取不到值就用该key设置一个初始值
+获取当前线程的内部map———>用自己（threaLocal变量）为key取出对应的值———>如果这个map没有初始化或者取不到值就用该key设置一个初始值
 
 ### set(T value)
 
@@ -100,11 +100,13 @@ public void set(T value) {
 
 ## 原理图
 
-通过上面的分析，我们画一个直观的图来展示：
+通过上面的分析，我们画一个图直观地展示一下：
 
 <img src="ThreadLocal.assets/ThreadLocal%E7%90%86%E8%A7%A3%E5%9B%BE.png" style="zoom:40%;" />
 
-通过代码和上面的图也可以看出，每个线程的map里面存的并不是value的一个副本：对于值类型来说，存的是value的副本，而对于引用类型来说，存的是value的一个引用。所以**在value为共享变量的时候，并不能通过ThreadLocal来解决冲突，因为每个线程里面存的都是同一个对象引用，依旧会造成冲突**。
+![img](https://images0.cnblogs.com/blog/458716/201401/172259164557.jpg)
+
+通过代码和上面的图也可以看出，每个线程的map里面存的并不是value的一个副本那么简单：对于值类型来说，存的是value的副本，而对于引用类型来说，存的是value的一个引用。所以**在value为共享变量的时候，并不能通过ThreadLocal来解决冲突，因为每个线程里面存的都是同一个对象引用，依旧会造成冲突**。
 
 ## 作用
 
@@ -117,15 +119,17 @@ public void set(T value) {
 
 1. 为什么要用ThreadLocal绕一下，最后把数据存在线程自己的map中，而不是直接在ThreadLocal中弄一个map结构，存进去？
 
-   **1. 最终存在线程中，可以保证在线程死去的时候，线程共享变量ThreadLocalMap则销毁。**
+   - **最终存在线程中，可以保证在线程死去的时候，线程共享变量ThreadLocalMap则销毁。**
+   - **如果ThreadLoad直接使用Map<Thread, Object>为底层数据结构，当有大量的线程使用ThreadLocal时，首先Map访问的性能会下降，伴随着线程生命周期，底层的Map还需要频繁的添加删除entity，这就很容易造成性能瓶颈。而且这种模式违反了单一职责原则**
+   - **（存疑）**~~用ThreadLocal为key是因为：ThreadLocalMap<ThreadLocal,Object>键值对数量为ThreadLocal的数量，一般来说ThreadLocal数量很少，相比在ThreadLocal中用Map<Thread, Object>键值对存储线程共享变量（Thread数量一般来说比ThreadLocal数量多），性能提高很多。~~
 
-   **2. 用ThreadLocal为key是因为：ThreadLocalMap<ThreadLocal,Object>键值对数量为ThreadLocal的数量，一般来说ThreadLocal数量很少，相比在ThreadLocal中用Map<Thread, Object>键值对存储线程共享变量（Thread数量一般来说比ThreadLocal数量多），性能提高很多。**
+   
 
 2. 关于ThreadLocalMap<ThreadLocal, Object>内存泄露问题：
 
    问题：
 
-   由于ThreadLocalMap是以弱引用的方式引用着ThreadLocal，换句话说，就是**ThreadLocal是被ThreadLocalMap以弱引用的方式关联着，因此如果ThreadLocal没有被ThreadLocalMap以外的对象引用，则在下一次GC的时候，ThreadLocal实例就会被回收，那么此时ThreadLocalMap里的一组KV的K就是null**了，因此在没有额外操作的情况下，此处的V便不会被外部访问到，而且**只要Thread实例一直存在，Thread实例就强引用着ThreadLocalMap，因此ThreadLocalMap就不会被回收，那么这里K为null的V就一直占用着内存**。
+   由于ThreadLocalMap是以弱引用的方式引用着ThreadLocal，换句话说，就是**ThreadLocal是被ThreadLocalMap中的key以弱引用的方式关联着，因此如果ThreadLocal没有被ThreadLocalMap以外的对象引用，则在下一次GC的时候，ThreadLocal实例就会被回收，那么此时ThreadLocalMap里的一组KV的K就是null**了，因此在没有额外操作的情况下，此处的V便不会被外部访问到，而且**只要Thread实例一直存在，Thread实例就强引用着ThreadLocalMap，因此ThreadLocalMap就不会被回收，那么这里K为null的V就一直占用着内存**。
 
    **当线程没有结束，但是ThreadLocal已经被回收，则可能导致线程中存在ThreadLocalMap<null, Object>的键值对，造成内存泄露。（ThreadLocal被回收，ThreadLocal关联的线程共享变量还存在）。**
 
@@ -143,4 +147,14 @@ public void set(T value) {
 
    1. 使用完线程共享变量后，显示调用ThreadLocalMap.remove方法清除线程共享变量；
    2. JDK建议ThreadLocal定义为private static，这样ThreadLocal的弱引用问题则不存在了。
+
+   
+
+3. ThreadLocalMap中的key为什么要以弱引用的方式引用着threadLocal实例？
+
+   正如上面所说，使用弱引用时，如果我们不需要threadLocal，把它的引用置为null，释放它和它在map里面的键值对的内存。线程不死的时候（比如使用了线程池），并且我们没有手动清理ThreadLocalMap，这个是时候就会出现ThreadLocalMap<null, Object>的键值对，造成内存泄露。
+
+   **那么试想一下，如果key不用弱引用，而是强引用着threadLocal实例。这个时候，我们把外部的threadLocal引用置null，想释放threadLocal内存时，由于它又被map内的key强引用着，所以这个threadLocal所代表的键值对无法被回收。并且我们再也无法访问到这个键值对了，因为这个key的外部引用已经被置为null了。我们使用ThreadLocalMap.remove方法也不好使，因为这个key的threadLocal实例并不为null，唯一能做的大概就是盼望着这个县城早点挂掉把！**
+
+
 

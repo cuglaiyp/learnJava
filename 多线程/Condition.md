@@ -27,7 +27,7 @@
 
 ## 3. 源码
 
-因为Condition是个借口，这里我们以AQS中的内部类ConditionObject类来讲解，ConditionObject实现了Condition接口
+因为Condition是个接口，这里我们以AQS中的内部类ConditionObject类来讲解，ConditionObject实现了Condition接口
 
 ### 3.1 await()
 
@@ -170,7 +170,7 @@ final boolean isOnSyncQueue(Node node) {
     // 如果当前结点等待状态为CONDITION或者prev为null，那么肯定不在同步队列中
     if (node.waitStatus == Node.CONDITION || node.prev == null)
         return false;
-    // 如果next不等于null，那么肯定在同步队列中，并且后继
+    // 如果当前结点的next不等于null，那么肯定在同步队列中
     if (node.next != null) // If has successor, it must be on queue
         return true;
     // 走到这，说明结点既不在同步队列中，又不在等待队列中，那么这个结点可能在哪？在等待队列向同步队列转移过程中
@@ -337,8 +337,11 @@ protected final boolean isHeldExclusively() {
 private void doSignal(Node first) {
     // 从第一个结点开始唤醒，唤醒成功跳出循环
     do {
+        // 判断等待队列是否还有结点，没有的画
         if ( (firstWaiter = first.nextWaiter) == null)
+            // 尾指针也置空
             lastWaiter = null;
+        // “转移结点”脱离等待队列
         first.nextWaiter = null;
     } while (!transferForSignal(first) &&
              (first = firstWaiter) != null);
