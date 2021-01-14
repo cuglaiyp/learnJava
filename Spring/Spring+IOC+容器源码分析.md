@@ -2761,3 +2761,53 @@ public interface BeanPostProcessor {
 本文的缺陷在于对 Spring 预初始化 singleton beans 的过程分析不够，主要是代码量真的比较大，分支旁路众多。同时，虽然附录条目不少，但是庞大的 Spring 真的引出了很多的概念，希望日后有精力可以慢慢补充一些。
 
 （全文完）
+
+## 补充
+
+spring启动的流程图（配合上面的分析使用）
+
+![](Spring+IOC+容器源码分析.assets/Spring流程图.png)
+
+**说明：**得到实例化Bean对于java语言已经是一个完全创建好的Bean，但是对于Spring来说，因为还有DI没有完成、init-method没有执行（该方法实际上不重要，基本没多少人写这个方法），所以是一个创建中的Bean。
+
+#### 循环依赖问题
+
+循环依赖问题发生在上图中的实例化Bean和populateBean方法两个阶段。也就是构造器循环依赖于字段循环依赖。
+
+循环依赖的解决主要依赖于三级缓存
+
+#### 三级缓存
+
+~~~java
+// 一级缓存
+/** Cache of singleton objects: bean name --> bean instance */
+private final Map<String, Object> singletonObjects = new ConcurrentHashMap<String, Object>(256);
+
+// 三级缓存
+/** Cache of singleton factories: bean name --> ObjectFactory */
+private final Map<String, ObjectFactory<?>> singletonFactories = new HashMap<String, ObjectFactory<?>>(16);
+
+// 二级缓存
+/** Cache of early singleton objects: bean name --> bean instance */
+private final Map<String, Object> earlySingletonObjects = new HashMap<String, Object>(16);
+~~~
+
+**一级缓存：**存放的是已经完全创建好的Bean，可以直接使用。
+
+**二级缓存：**存放的是创建中的Bean。
+
+**三级缓存：**存放的可以获取Bean的工厂对象（源码中用lambda表达式表示）。这个工厂在创建Bean的时候，会根据是否有配置AOP从而决定是否生成代理对象。
+
+#### 循环依赖的解决
+
+假设A与B循环依赖：
+
+1. 先从一级缓存中取A Bean。如果没有取到并且该Bean也不是在创建过程中，则执行createBean，创建A Bean。
+2. 创建完该A Bean后，判断一下相关标志位（该Bean是否为单例、Spring是否允许循环引用、该Bean是否在创建中），如果都满足，那么把能够得到A的工厂放入三级缓存中暴露出来（源码用的“exposure”，所以叫暴露），然后执行第3步；如果有一个不满足直接执行第3步。
+3. 调用populateBean方法填充该A的属性B。所以需要得到B，那么对B执行1.2.3.步
+4. B执行到第3步之后，又需要填充属性A。那么又要执行第1步，这个时候就有所不同了，因为这个时候A在创建过程中，所以会尝试从2级缓存中拿，2级缓存也没有，那么尝试就从3级缓存中拿。有2.可知，A的工厂在目前存在于三级缓存中，所以可以拿到A的工厂获取A。
+5. 拿到A之后，就将A放置到2级缓存中，并且将三级缓存中A的工厂删掉。
+6. B拿到A之后成功填充了属性，那么就会将B移到一级缓存中，并且返回。
+7. 返回到3.，这时B已经创建好了也初始化好了，A填充B的时候从一级缓存中可以直接获取到B，完成属性填充，并且转移到一级缓存。这时候A和B就都创建好了。
+
+[循环依赖](Spring循环依赖)
