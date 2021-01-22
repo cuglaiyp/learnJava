@@ -2766,7 +2766,7 @@ public interface BeanPostProcessor {
 
 spring启动的流程图（配合上面的分析使用）
 
-![](Spring+IOC+容器源码分析.assets/Spring流程图.png)
+![IOC](Spring+IOC+%E5%AE%B9%E5%99%A8%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90.assets/IOC.png)
 
 **说明：**得到实例化Bean对于java语言已经是一个完全创建好的Bean，但是对于Spring来说，因为还有DI没有完成、init-method没有执行（该方法实际上不重要，基本没多少人写这个方法），所以是一个创建中的Bean。
 

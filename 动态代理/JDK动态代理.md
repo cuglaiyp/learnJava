@@ -80,7 +80,7 @@ final class $Proxy0 extends Proxy implements SmsService {
     // 可以看到，代理类中，实现了需要被代理接口中的方法
     public final void send(String var1) throws  {
         try {
-            // 调用父类中，也就是Proxy中保存的invoke方法去执行我们的被代理方法。
+            // 调用父类中，也就是Proxy中保存InvocationHandler的invoke方法去执行我们的被代理方法。
             super.h.invoke(this, m3, new Object[]{var1});
         } catch (RuntimeException | Error var3) {
             throw var3;
@@ -117,3 +117,8 @@ final class $Proxy0 extends Proxy implements SmsService {
 
 ​                                                                                                                                                |——>`增强代码`
 
+**大白话来说就是这样**：
+
+1. 兄弟（目标类）你把你实现接口告诉我（代理类），这样我去实现这个接口，一来知道你里面的方法，二来我们俩的类型就是一样的了，这样的话在别人需要你的时候，把我给人家，方法我也有、类型也一样，达到以假乱真的效果。（`newProxyInstance`第二个参数的意义）
+2. 但是，虽然说我有你的同名方法，在这个方法中可以直接去调用你的同名方法，达到代理你方法的效果，但是有两个问题：一是我并不知道怎么去增强你方法，二是我也不知道在有了增强代码后什么时机去调用你的同名方法。所以我们俩需要约定一下，你在`InvocationHandler`类型的`invoke`方法中写好怎么增强、增强的时候什么时机调用的你的方法，然后把这玩意儿给我保存。当别人调我方法的时候，我调这个`invoke`方法。（`newProxyInstance`第三个参数的意义）
+3. 最后还有一个点就是，因为我的是运行时生成的字节码，我要用类加载器把自己加载进jvm里面，为了保证咱俩在jvm层面也是同样的类型，你需要把你的类加载器也传递给我。（`newProxyInstance`第一个参数的意义）
