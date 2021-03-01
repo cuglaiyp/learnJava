@@ -18,6 +18,10 @@
    Spring给WebApplicationInitializer也做了一个基础实现类，也就是AbstractAnnotationConfigDispatcherServletInitializer
 3. 我们自己定义类SpittrWebAppInitializer就会被查找，用来配置Servlet容器
 
+### Redis缓存配置
+
+设置redis序列化器的时候，注意key和value的类型不一样的时候，要分别设置他俩的序列化器。
+
 ### bug解决
 
 ##### bug1：

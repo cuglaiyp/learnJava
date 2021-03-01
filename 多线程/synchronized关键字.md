@@ -50,4 +50,4 @@ class Task implements Runnable {
 
 ---
 
-结合这篇[synchronized.md](D:\TyporaDocument\Java\多线程\synchronized.md)一起看
+结合这篇[synchronized.md](synchronized.md)一起看
