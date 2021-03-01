@@ -32,6 +32,22 @@ spring-mvc项目配置的jpa与spring-jpa项目的配置一模一样，可spring
 
 > 解决：玄学解决，将Artifact删掉重新配置一遍，重新命一个新名字试试。详情见spring-mvc项目，具体配置都有注释。
 
+##### bug3
+
+spring-mvc项目启动后，浏览器无法访问到index.jsp页面。因为我把webapp删了改成了web，文件夹的标记变没了。
+
+>解决：把web文件夹标记一下，如下图所示
+>
+>![image-20210108135347383](SSM.assets/image-20210108135347383.png)
+
+##### bug4
+
+页面请求进不到Controller，一直报404错误。
+
+> 这个时候一定要去检查项目已经controller的路径。IDEA在当前窗口下，一次只能打开一个项目，而且IDEA是一个项目工程默认一个Tomcat服务器，所以**没必要**在访问路径中加上项目名以示区分不同的项目。eclipse**必须**在访问路径中加上项目名以示区分不同的项目，因为它很有可能一个Tomcat服务器下部署了多个项目，访问路径中不加"项目名"，使用http://localhost:8080/index.jsp，肯定是访问不了，会出现**404访问路径错误**。
+>
+> 例如http://localhost:8080/（tomcat中配置的路径），就已经可以访问到项目的欢迎页面了。但是为了照顾我们的习惯，在部署的时候，IDEA会帮我们添加上项目名，变成这样http://localhost:8080/seckill/。seckill就相当于我们把我们这个项目（虚拟）部署到tomcat的webapp下的seckill下面了，seckill后面的/就是我们的根路径。在访问`@RequestMapping(value = "/seckill") @RequestMapping(value = "/list", method = RequestMethod.GET)`这个映射的时候需要的路径就是上面那个后面继续加上seckill和list，变成这样http://localhost:8080/seckill/seckill/list
+
 # Mybatis
 
 ##### bug1
