@@ -17,11 +17,20 @@
 　　**缺点**：很难解决对象之间循环引用的问题。例如下面这个例子
 
 ```java
-Object a = new Object();
-Object b = new Object(); 
-a=b;
-b=a;
-a=b=null; //这样就导致gc无法回收他们。　　
+public class ReferenceCountingGC{
+    public Object instance = null;
+    private static final int _1MB = 1024*1024;
+    public byte[] bigSize = new byte[2*_1MB]; // 占点内存，以便在GC日志中查看是否回收过
+    
+    public static void testGC(){
+        ReferenceCountingGC objA = new ReferenceCountingGC();
+        ReferenceCountingGC objB = new ReferenceCountingGC();
+        objA.instance = objB;
+        objB.instance = objA;
+        
+        System.gc(); // 假设这里发生GC，引用计数法能否回收objA和objB
+    }
+}　
 ```
 
 ### 1.2 可达性分析算法

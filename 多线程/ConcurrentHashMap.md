@@ -84,12 +84,12 @@ public V put(K key, V value) {
 ## spread方法
 
 ~~~java
-// 低位16位全1，高16位全0，与 上hash，保证了hash的低16位不变，高16位全为0，从而保证了hash为正数
+// 低位16位全1，高16位全0，与 hash，保证了hash的低16位不变，高16位全为0，从而保证了hash为正数
 static final int HASH_BITS = 0x7fffffff;
 
 /* 与HashMap中的hash方法基本一样 */
 static final int spread(int h) {
-    // 多了一个 与 上HASH_BITS 操作，是为了保证这个计算出来额hash值是正数。
+    // 多了一个 与 HASH_BITS 操作，是为了保证这个计算出来额hash值是正数。
     // 因为有特殊结点，它们hash为负数，区分正负方便判断
     // 例：static final int MOVED     = -1; // ForwardingNode结点的hash
     //	  static final int TREEBIN   = -2; // 红黑树头结点，hash值统一为-2，该头不存储数据
@@ -114,7 +114,7 @@ final V putVal(K key, V value, boolean onlyIfAbsent) {
         Node<K,V> f; int n, i, fh;
        	// 1. 判断table(tab 即为 table)是否还没有初始化，是的话就先初始化table
         if (tab == null || (n = tab.length) == 0)
-            tab = initTable();
+            tab = initTable(); // 就是new一个数组出来。因为可能存在竞争，需要CAS控制
         // 2. table已经初始化了，用put方法传来的key的hash值计算该键值对在table中的索引
         // 如果该索引位置为空，那么就new一个结点，用CAS原子操作把该节点放进去，并跳出循环
         // （binCount = 0， f 为该链的头结点，i 为通过hash算出来的 f 在数组中的索引）
@@ -221,7 +221,7 @@ private final Node<K,V>[] initTable() {
             try {
                 // 当前线程成功拿到初始化权，先判断一下表没被初始化（保险起见）
                 if ((tab = table) == null || tab.length == 0) {
-                    // sc还保留着sizeCtl之前的数据
+                    // sc还保留着sizeCtl之前的数据，也就是初始容量
                     // sc=0,说明调用的是无参构造方法，直接赋默认值给n，
                     // sc>0，那么sc的值就是table应该初始化的容量
                     int n = (sc > 0) ? sc : DEFAULT_CAPACITY;
@@ -359,7 +359,7 @@ private final void addCount(long x, int check) {
  * 直接看下面的例子解释这个方法：(假设当前 n = 32， 那么Integer.numberOfLeadingZeros(n)就 = 27)
  *   1    =   0000 0000 0000 0000 0000 0000 0000 0001
  * 1<<15  =   0000 0000 0000 0000 1000 0000 0000 0000‬   相
- *   27   =   0000 0000 0000 0000 0000 0000 0001 1011   与
+ *   27   =   0000 0000 0000 0000 0000 0000 0001 1011   或
  * ----------------------------------------------------------
  *   rs   =   0000 0000 0000 0000 1000 0000 0001 1011
  * 那么在扩容时 sc = (rs << RESIZE_STAMP_SHIFT) + 2
@@ -679,7 +679,7 @@ private final void transfer(Node<K,V>[] tab, Node<K,V>[] nextTab) {
 
 整理一下transfer方法，transfer方法总体上就做了两件事：
 
-1. 领取任务（拿到自己的扩容区间的上下界索引，索引由高到低领取）
+1. 领取任务（拿到自己的扩容区间的上下界索引，索引由高到低领取，使用CAS）
 2. 完成区间扩容任务（分为链表结点、树结点两种），执行完当前任务后，判断总体扩容任务是否结束，否则领取新任务
 
 ---

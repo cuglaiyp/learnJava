@@ -2,7 +2,7 @@
 
 ## 1.概述
 
-任意一个Java对象，都拥有一组监视器方法（定义在java.lang.Object上），主要包括wait()、 wait(long timeout)、notify()以及notifyAll()方法，这些方法与synchronized同步关键字配合，可以 实现等待/通知模式。Condition接口也提供了类似Object的监视器方法，与Lock配合可以实现等 待/通知模式，但是这两者在使用方式以及功能特性上还是有差别的。
+任意一个Java对象，都拥有一组监视器方法（定义在java.lang.Object上），主要包括wait()、 wait(long timeout)、notify()以及notifyAll()方法，这些方法与synchronized同步关键字配合，可以 实现等待/通知模式。Condition接口也提供了类似Object的监视器方法，与Lock配合可以实现等待/通知模式，但是这两者在使用方式以及功能特性上还是有差别的。
 通过对比Object的监视器方法和Condition接口，可以更详细地了解Condition的特性，对比项与结果如下表所示。
 
 | 对比项                                       | Monitor Methods             | Condition                                                    |
@@ -40,7 +40,7 @@ public final void await() throws InterruptedException {
     // 用当前线程构建一个等待结点并放到condition的队尾，返回构建的结点
     Node node = addConditionWaiter();
     
-    // 释方当前线程所占用全部锁资源，返回所占用锁（state）的次数
+    // 释放当前线程所占用全部锁资源，返回所占用锁（state）的次数。并且会唤醒同步队列中后继等待结点，后继结点抢到锁之后就会断开同步队列中这个线程所属结点的连接
     int savedState = fullyRelease(node);
     
     /** 

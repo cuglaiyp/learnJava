@@ -346,3 +346,116 @@ private V report(int s) throws ExecutionException {
 #### 3.3.3 get方法总结
 
 这个方法也不难，比较特别的就是：当结果还没跑出来的时候，取结果的线程会阻塞，等待结果出来。而且可以有很多线程都来取结果。
+
+## Completable
+
+~~~java
+final boolean tryPushStack(Completion c) {
+    Completion h = stack; // 每一个UniAccept中都包装了源任务和当前任务
+    lazySetNext(c, h); // c中的next指向h，即将h挂在c后面，c压栈
+    return UNSAFE.compareAndSwapObject(this, STACK, h, c); // 设置源任务中的栈头为c
+}
+~~~
+
+~~~java
+static <U> CompletableFuture<U> asyncSupplyStage(Executor e,
+                                                 Supplier<U> f) {
+    if (f == null) throw new NullPointerException();
+    CompletableFuture<U> d = new CompletableFuture<U>();
+    e.execute(new AsyncSupply<U>(d, f));
+    return d; // 此时，d又在线程池里面等着执行d.completeValue，又被主线程返回准备执行的d.uniAcceptStage
+}
+
+public void run() {
+    CompletableFuture<T> d; Supplier<T> f;
+    if ((d = dep) != null && (f = fn) != null) {
+        dep = null; fn = null;
+        if (d.result == null) {
+            try {
+                d.completeValue(f.get()); // 结果出来后,将结果放入源的结果字段中
+            } catch (Throwable ex) {
+                d.completeThrowable(ex);
+            }
+        }
+        d.postComplete(); // 调用postComplete
+    }
+}
+
+private CompletableFuture<Void> uniAcceptStage(Executor e,
+                                               Consumer<? super T> f) {
+    if (f == null) throw new NullPointerException();
+    CompletableFuture<Void> d = new CompletableFuture<Void>(); // 又new了一个新CompletableFuture d。执行这个方法的d（this）称为源，新的成为依赖
+    if (e != null || !d.uniAccept(this, f, null)) { // 依赖d执行uniAccept。
+        UniAccept<T> c = new UniAccept<T>(e, d, this, f); // 下面返回了false.就进来了. 然后将源和依赖(只关注源和依赖)封装成一个Completion
+        push(c); // 将这个Completion压入源的栈顶
+        c.tryFire(SYNC); // 用栈顶的Completion以同步的方式执行tryFire
+    }
+    return d; //返回依赖
+}
+
+
+final <S> boolean uniAccept(CompletableFuture<S> a,
+                            Consumer<? super S> f, UniAccept<S> c) {
+    Object r; Throwable x;
+    // 判断源、源的结果、依赖的步骤是不是为null
+    if (a == null || (r = a.result) == null || f == null) // 有一个为null 返回false。当d.completeValue任务耗时很长时，源结果为null，在设计好的场景里，这里会直接返回false
+        return false;
+    tryComplete: if (result == null) { // 判断结果是否为null,这个结果表示的是谁执行这个方法就是谁的.当源结果已经出来了,那么就可以进到这里来.判断一下依赖结果出来没有
+        // 依赖结果没有出来,那么就根据源结果的不同进行处理
+        if (r instanceof AltResult) { // 先不管异常结果
+            if ((x = ((AltResult)r).ex) != null) {
+                completeThrowable(x, r);
+                break tryComplete;
+            }
+            r = null;
+        }
+        try {
+            // 源结果出来,调用栈顶的claim方法,异步唤醒
+            if (c != null && !c.claim())
+                return false;
+            @SuppressWarnings("unchecked") S s = (S) r;
+            f.accept(s);
+            completeNull();
+        } catch (Throwable ex) {
+            completeThrowable(ex);
+        }
+    }
+    return true;
+}
+
+// 这个方法的意思是尝试去释放,因为可能源的结果已经出来了,所以栈顶的Completion尝试能不能释放一下,执行后续操作
+final CompletableFuture<Void> tryFire(int mode) {
+    CompletableFuture<Void> d; CompletableFuture<T> a;
+    if ((d = dep) == null ||
+        !d.uniAccept(a = src, fn, mode > 0 ? null : this)) // 拿到依赖执行的它的uniAccept,因为时SYNC,所以mode=0,如果源的结果为null,还是回返回false
+        return null;
+    dep = null; src = null; fn = null;
+    return d.postFire(a, mode);
+}
+
+final void postComplete() {
+    /*
+         * On each step, variable f holds current dependents to pop
+         * and run.  It is extended along only one path at a time,
+         * pushing others to avoid unbounded recursion.
+         */
+    CompletableFuture<?> f = this; Completion h;
+    while ((h = f.stack) != null ||
+           (f != this && (h = (f = this).stack) != null)) { // 拿到栈顶的Completion
+        CompletableFuture<?> d; Completion t;
+        if (f.casStack(h, t = h.next)) { // 出栈
+            if (t != null) { 
+                if (f != this) { // 先不考虑这个if
+                    pushStack(h);
+                    continue;
+                }
+                h.next = null;    // detach
+            }
+            // 调用栈顶Completion tryFire
+            f = (d = h.tryFire(NESTED)) == null ? this : d;
+        }
+    }
+}
+~~~
+
+![Completable](Future%E3%80%81Callable.assets/Completable.png)
