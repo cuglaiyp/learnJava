@@ -29,7 +29,7 @@ Stream.of(1, 5, 1, 4, 2, 4)
         <tr>
             <td rowspan="2" border="1">结束操作(Terminal operations)</td>
             <td>非短路操作</td>
-            <td>forEach() forEachOrdered() toArray() reduce() colect() max() min() count()
+            <td>forEach() forEachOrdered() toArray() reduce() collect() max() min() count()
             </td>
         </tr>
         <tr>
@@ -38,6 +38,7 @@ Stream.of(1, 5, 1, 4, 2, 4)
         </tr>
     </tbody>
 </table>
+
 
 看完了操作，我们来看一下Stream体系的组织架构。
 
@@ -204,7 +205,7 @@ AbstractPipeline(Spliterator<?> source, int sourceFlags, boolean parallel) {
 */
 public final <R> Stream<R> map(Function<? super P_OUT, ? extends R> mapper) {
     Objects.requireNonNull(mapper);
-    // 返回一个StatelessOp的匿名子类对象，因为map方法是每个元素是独立处理的，没有相互的关系
+    // 返回一个StatelessOp的匿名子类对象，因为map方法是每个元素是独立处理的，没有相互的关系，所以是无状态的操作
     // 这里的this表示调用这个方法的对象，也即上流结点
     return new StatelessOp<P_OUT, R>(this, StreamShape.REFERENCE,
                                      StreamOpFlag.NOT_SORTED | StreamOpFlag.NOT_DISTINCT) {
@@ -276,7 +277,7 @@ AbstractPipeline(AbstractPipeline<?, E_IN, ?> previousStage, int opFlags) {
 
 可以看到，在new出这个新的stage的时候，就已经把这个stage挂到了流管道的末尾了，并且可以看到，**这个流管道是以双向链表组织起来的**。从这个我们就可以类比推出，每一个中间操作都只会直接返回一个StatelessOp或者StatefulOp匿名内部类（匿名子类）对象，并且在new的过程中把这个对象挂到流管道的末尾。从这，可以看出中间操作并没有执行具体的操作，是一种**懒加载的模式**。
 
-那么问题来了，是什么时机触发整个流开始执行呢，执行过程又是怎样的呢？第一个问题，我们基本上可以推断出在调用结束操作的时候，触发了整个流的执行。我们来看看源码中是怎触发的，怎么执行的。下面以forEach结束操作为例
+那么问题来了，是什么时机触发整个流开始执行呢，执行过程又是怎样的呢？第一个问题，我们基本上可以推断出在调用结束操作的时候，触发了整个流的执行。我们来看看源码中是怎么触发的，怎么执行的。下面以forEach结束操作为例
 
 ### 流stage的forEach方法
 

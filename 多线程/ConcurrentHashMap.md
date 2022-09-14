@@ -355,9 +355,8 @@ private final void addCount(long x, int check) {
 ~~~java
 /**
  * 通过当前table长度，拿到一个扩容标识，参数n为当前table长度。
- * 1 << (RESIZE_STAMP_BITS - 1)的意思是将RESIZE_STAMP_BITS位置上置为1，其他全为0
+ * 1 << (RESIZE_STAMP_BITS - 1)的意思是将RESIZE_STAMP_BITS（16）位置上置为1，其他全为0
  * 直接看下面的例子解释这个方法：(假设当前 n = 32， 那么Integer.numberOfLeadingZeros(n)就 = 27)
- *   1    =   0000 0000 0000 0000 0000 0000 0000 0001
  * 1<<15  =   0000 0000 0000 0000 1000 0000 0000 0000‬   相
  *   27   =   0000 0000 0000 0000 0000 0000 0001 1011   或
  * ----------------------------------------------------------
@@ -389,7 +388,7 @@ static final class ForwardingNode<K,V> extends Node<K,V> {
 
 ForwardingNode 继承自 Node 结点，并且它唯一的构造函数将构建一个键，值，next 都为 null 的结点，反正它就是个标识，无需那些属性。但是 hash 值却为 MOVED。
 
-这个节点内部保存了一 nextTable 引用，它指向一张 hash 表。在扩容操作中，我们需要对原表中每一个桶中的结点进行分离和转移到新的这个nextTable中（与HashMap类似，不过HashMap是在原表上直接扩容，ConcurrentHashMap是新建了一张表），如果某个桶结点中所有节点都已经迁移完成了（已经被转移到新表 nextTable 中了），那么会在原 table 表的该位置挂上一个 ForwardingNode 结点，说明此桶已经完成迁移。
+这个节点内部保存了一 个nextTable 引用，它指向一张 hash 表。在扩容操作中，我们需要对原表中每一个桶中的结点进行分离和转移到新的这个nextTable中（与HashMap类似，不过HashMap是在原表上直接扩容，ConcurrentHashMap是新建了一张表），如果某个桶结点中所有节点都已经迁移完成了（已经被转移到新表 nextTable 中了），那么会在原 table 表的该位置挂上一个 ForwardingNode 结点，说明此桶已经完成迁移。
 
 所以，我们在 putVal 方法中遍历整个 hash 表的桶结点，如果遇到 hash 值等于 MOVED，说明已经有线程正在扩容 rehash 操作，整体上还未完成，不过我们要插入的桶的位置已经完成了所有节点的迁移。
 
@@ -483,7 +482,7 @@ private final void transfer(Node<K,V>[] tab, Node<K,V>[] nextTab) {
             // 第一次判断这个，总是不成立的
             if (--i >= bound || finishing)
                 advance = false;
-            // 第一次判断，这个也不成立，transferIndex为原表长度 (赋值了nextIndex)
+            // 第一次判断，这个也不成立，transferIndex为原表长度 (赋值g了nextIndex)
             else if ((nextIndex = transferIndex) <= 0) {
                 i = -1;
                 advance = false;

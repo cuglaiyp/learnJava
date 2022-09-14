@@ -160,7 +160,6 @@ public class Hello {
         }
     }
 }
-1234567
 ```
 
 通过 `javap -c` 查看其编译后的字节码:
@@ -195,7 +194,6 @@ public class Hello {
            4    14    17   any
           17    20    17   any
 }
-1234567891011121314151617181920212223242526272829
 ```
 
 从字节码中可知同步语句块的实现使用的是`monitorenter`和`monitorexit`指令，其中`monitorenter`指令指向同步代码块的开始位置，`monitorexit`指令则指明同步代码块的结束位置，当执行`monitorenter`指令时，当前线程将试图获取mark word里面存储的`monitor`，当 `monitor`的进入计数器为 0，那线程可以成功取得`monitor`，并将计数器值设置为1，取锁成功。
@@ -214,7 +212,6 @@ public class Hello {
         System.out.println("test");
     }
 }
-12345
 ```
 
 方法级的同步是隐式，即无需通过字节码指令来控制的，它实现在方法调用和返回操作之中。JVM可以从方法常量池中的方法表结构(method_info Structure) 中的 `ACC_SYNCHRONIZED` 访问标志区分一个方法是否同步方法。当方法调用时，调用指令将会 检查方法的 `ACC_SYNCHRONIZED`访问标志是否被设置，如果设置了，执行线程将先持有`monitor`，然后再执行方法，最后在方法完成(无论是正常完成还是非正常完成)时释放`monitor`。在方法执行期间，执行线程持有了`monitor`，其他任何线程都无法再获得同一个`monitor`。如果一个同步方法执行期间抛出了异常，并且在方法内部无法处理此异常，那这个同步方法所持有的`monitor`将在异常抛到同步方法之外时自动释放。
@@ -235,7 +232,6 @@ public class Hello {
        5: invokevirtual #4                  // Method java/io/PrintStream.println:(Ljava/lang/String;)V
        8: return
 }
-12345678910111213
 ```
 
 ## 锁的其他优化
@@ -253,7 +249,6 @@ public  void lockCoarsening() {
         i=i+2;
     }
 }
-123456789
 ```
 
 上面的两个同步代码块可以变成一个
@@ -266,7 +261,6 @@ public  void lockCoarsening() {
         i=i+2;
     }
 }
-1234567
 ```
 
 - 锁消除（Lock Elimination）：锁消除即删除不必要的加锁操作的代码。比如下面的代码,下面的for循环完全可以移出来，这样可以减少加锁代码的执行过程

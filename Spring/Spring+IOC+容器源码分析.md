@@ -307,7 +307,7 @@ protected final void refreshBeanFactory() throws BeansException {
    try {
       // 初始化一个 DefaultListableBeanFactory，为什么用这个，我们马上说。
       DefaultListableBeanFactory beanFactory = createBeanFactory();
-      // 用于 BeanFactory 的序列化，我想不部分人应该都用不到
+      // 用于 BeanFactory 的序列化，我想d部分人应该都用不到
       beanFactory.setSerializationId(getId());
      
       // 下面这两个方法很重要，别跟丢了，具体细节之后说
@@ -2766,7 +2766,7 @@ public interface BeanPostProcessor {
 
 spring启动的流程图（配合上面的分析使用）
 
-![IOC](Spring+IOC+%E5%AE%B9%E5%99%A8%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90.assets/IOC.png)
+![](Spring+IOC+%E5%AE%B9%E5%99%A8%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90.assets/Spring%E6%B5%81%E7%A8%8B%E5%9B%BE.png)
 
 **说明：**得到实例化Bean对于java语言已经是一个完全创建好的Bean，但是对于Spring来说，因为还有DI没有完成、init-method没有执行（该方法实际上不重要，基本没多少人写这个方法），所以是一个创建中的Bean。
 
@@ -2802,12 +2802,16 @@ private final Map<String, Object> earlySingletonObjects = new HashMap<String, Ob
 
 假设A与B循环依赖：
 
-1. 先从一级缓存中取A Bean。如果没有取到并且该Bean也不是在创建过程中，则执行createBean，创建A Bean。
-2. 创建完该A Bean后，判断一下相关标志位（该Bean是否为单例、Spring是否允许循环引用、该Bean是否在创建中），如果都满足，那么把能够得到A的工厂放入三级缓存中暴露出来（源码用的“exposure”，所以叫暴露），然后执行第3步；如果有一个不满足直接执行第3步。
-3. 调用populateBean方法填充该A的属性B。所以需要得到B，那么对B执行1.2.3.步
-4. B执行到第3步之后，又需要填充属性A。那么又要执行第1步，这个时候就有所不同了，因为这个时候A在创建过程中，所以会尝试从2级缓存中拿，2级缓存也没有，那么尝试就从3级缓存中拿。有2.可知，A的工厂在目前存在于三级缓存中，所以可以拿到A的工厂获取A。
-5. 拿到A之后，就将A放置到2级缓存中，并且将三级缓存中A的工厂删掉。
-6. B拿到A之后成功填充了属性，那么就会将B移到一级缓存中，并且返回。
-7. 返回到3.，这时B已经创建好了也初始化好了，A填充B的时候从一级缓存中可以直接获取到B，完成属性填充，并且转移到一级缓存。这时候A和B就都创建好了。
+1. 先从一级缓存中取A Bean。如果没有取到并且该Bean也不是在创建过程中，则执行createBean，创建A。
+2. 创建完该A Bean后，判断一下相关标志位（该Bean是否为单例、Spring是否允许循环引用、该Bean是否在创建中），如果都满足，那么把能够得到A的工厂放入三级缓存中暴露出来（源码用的“exposure”，所以叫暴露）。
+3. 调用populateBean方法填充该A的属性B。那么又需要得到B。
+4. 先从一级缓存中取B。如果没有取到并且该Bean也不是在创建过程中，则执行createBean，创建B。
+5. 创建完该B后，判断一下相关标志位（该Bean是否为单例、Spring是否允许循环引用、该Bean是否在创建中），如果都满足，那么把能够得到B的工厂放入三级缓存中暴露出来（源码用的“exposure”，所以叫暴露）。
+6. 调用populateBean方法填充B的属性A。那么又需要得到A。这个时候就有所不同了，因为这个时候A在创建过程中，满足创建的条件，所以会尝试从1、2、3级缓存中拿，1、2级缓存3没有，那么尝试就从3级缓存中拿。由2.可知，A的工厂在目前存在于三级缓存中，所以可以拿到A的工厂获取A，如果A有AOP相关设置，该工厂会生成A的AOP代理对象（下文依旧称A）。
+7. 拿到A之后，就将A放置到2级缓存中，并且将三级缓存中A的工厂删掉，返回这个A给B。
+8. B拿到A之后成功填充属性，然后执行initializeBean()，BeanPostProcessor就是在这生效。如果有AOP，那么在BeanPostProcessor的after()方法里进行AOP代理，生成B的代理对象。（二级缓存里面的Bean已经提前代理过，不会再进行代理）
+9. 如果B是在二级缓存里面就返回二级缓存的Bean（因为二级缓存的Bean是提前暴露过的，必要的话已经完成了AOP代理），没有的话，那么就返回三级缓存的Bean
+10. 将自己转移到一级缓存，此时B已经完全创建完成，包括属性也填充好了。返回B给A。
+11. 返回到6.，这时B已经创建好了也初始化好了，A填充B的时候从一级缓存中可以直接获取到B，完成属性填充，并且转移到一级缓存。这时候A和B就都创建好了。
 
 [循环依赖](Spring循环依赖)

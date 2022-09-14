@@ -50,7 +50,7 @@ AQS定义两种资源共享方式：Exclusive（独占，只有一个线程能�
 这里我们说下Node。Node结点是对每一个等待获取资源的线程的封装，其包含了需要同步的线程本身及其等待状态，如是否被阻塞、是否等待唤醒、是否已经被取消等。变量waitStatus则表示当前Node结点的等待状态，共有5种取值CANCELLED、SIGNAL、CONDITION、PROPAGATE、0。
 
 - **CANCELLED**(1)：表示当前结点已取消调度。当timeout或被中断（响应中断的情况下），会触发变更为此状态，进入该状态后的结点将不会再变化。
-- **SIGNAL**(-1)：表示后继结点在等待当前结点唤醒。后继结点入队时，会将前继结点的状态更新为SIGNAL。
+- **SIGNAL**(-1)：表示后继结点在等待当前结点唤醒。后继结点入队时，会将前置结点的状态更新为SIGNAL。
 - **CONDITION**(-2)：表示结点等待在Condition上，当其他线程调用了Condition的signal()方法后，CONDITION状态的结点将**从等待队列转移到同步队列中**，等待获取同步锁。
 - **PROPAGATE**(-3)：共享模式下，前继结点不仅会唤醒其后继结点，同时也可能会唤醒后继的后继结点。
 - **0**：新结点入队时的默认状态。
@@ -78,7 +78,7 @@ public final void acquire(int arg) {
 
 1. tryAcquire()尝试直接去获取资源，如果成功则直接返回（这里体现了非公平锁，每个线程获取锁时会尝试直接抢占加塞一次，而CLH队列中可能还有别的线程在等待）；
 2. addWaiter()将该线程加入等待队列的尾部，并标记为独占模式；
-3. acquireQueued()使线程阻塞在等待队列中获取资源，一直获取到资源后才返回。如果在整个等待过程中被中断过，则返回true，否则返回false。
+3. acquireQueued()使线程阻塞在等待队列中等待资源，一直获取到资源后才返回。如果在整个等待过程中被中断过，则返回true，否则返回false。
 4. 如果线程在等待过程中被中断过，它是不响应的。只是获取资源后才再进行自我中断selfInterrupt()，将中断补上。
 
 这时单凭这4个抽象的函数来看流程还有点朦胧，不要紧，看完接下来的分析后，你就会明白了。
@@ -373,7 +373,7 @@ protected final boolean tryRelease(int releases) {
 
 ~~~java
 private void unparkSuccessor(Node node) {
-    //这里，node一般为当前线程所在的结点，也就是。
+    //这里，node一般为当前线程所在的结点，也就是c。
     int ws = node.waitStatus;
     if (ws < 0)//置零当前线程所在的结点状态，允许失败。
         compareAndSetWaitStatus(node, ws, 0);

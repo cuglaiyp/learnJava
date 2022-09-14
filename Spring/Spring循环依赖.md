@@ -357,7 +357,9 @@ public Object getEarlyBeanReference(Object bean, String beanName) {
 
 ![image-20200706160542584](Spring循环依赖.assets/aHR0cHM6Ly9naXRlZS5jb20vd3hfY2MzNDdiZTY5Ni9ibG9nSW1hZ2UvcmF3L21hc3Rlci9pbWFnZS0yMDIwMDcwNjE2MDU0MjU4NC5wbmc.png)
 
-在完成初始化后，Spring又调用了一次`getSingleton`方法，这一次传入的参数又不一样了，false可以理解为禁用三级缓存，前面图中已经提到过了，在为B中注入A时已经将三级缓存中的工厂取出，并从工厂中获取到了一个对象放入到了二级缓存中，所以这里的这个`getSingleton`方法做的时间就是从二级缓存中获取到这个代理后的A对象，最后返回给上游`createBean()`，再返回给上游`getInstance()`存放到一级缓存中。`exposedObject == bean`可以认为是必定成立的，除非你非要在初始化阶段的后置处理器中替换掉正常流程中的Bean，例如增加一个后置处理器：
+在完成初始化后，Spring又调用了一次`getSingleton`方法，这一次传入的参数又不一样了，false可以理解为禁用三级缓存，前面图中已经提到过了，在为B中注入A时已经将三级缓存中的工厂取出，并从工厂中获取到了一个对象放入到了二级缓存中，所以这里的这个`getSingleton`方法做的时间就是从二级缓存中获取到这个代理后的A对象，最后返回给上游`createBean()`，再返回给上游`getInstance()`存放到一级缓存中。
+
+`exposedObject == bean`可以认为是必定成立的，除非你非要在初始化阶段的后置处理器中替换掉正常流程中的Bean，例如增加一个后置处理器：
 
 ```java
 @Component

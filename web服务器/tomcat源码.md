@@ -32,5 +32,5 @@ StandardService启动时，会调用mapperListener.start()->startInternal()，�
 
    5. 最后将ContextVersion和它的path一起封装成MappedContext放到Mapper中的MappedHost中去。
 
-可以看到郑整个过程，就是通过一层一层扫描我们的容器，将它们的映射信息以及其他的一些相关信息和容器本身封装起来，存入mapper之中。所以Mapper结构也如容器结构类似，host包着context，context包着wrapper。只不过Mapper中的容器与他们之间的映射路径已经强关联在一起了
+可以看到整个过程，就是通过一层一层扫描我们的容器，将它们的映射信息以及其他的一些相关信息和容器本身封装起来，存入mapper之中。所以Mapper结构也如容器结构类似，host包着context，context包着wrapper。只不过Mapper中的容器与他们之间的映射路径已经强关联在一起了
 

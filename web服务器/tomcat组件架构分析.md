@@ -30,7 +30,7 @@ Tomcat 作为一个 `Http` 服务器 + `Servlet` 容器，对我们屏蔽了应�
 
 学习 Tomcat 的原理，我发现 `Servlet` 技术是 Web 开发的原点，几乎所有的 Java Web 框架（比如 Spring）都是基于 `Servlet` 的封装，Spring 应用本身就是一个 `Servlet`（`DispatchSevlet`），而 Tomcat 和 Jetty 这样的 Web 容器，负责加载和运行 `Servlet`。如图所示：
 
-<img src="tomcat.assets/web服务架构.png" alt="图片" style="zoom:67%;" />
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/web%E6%9C%8D%E5%8A%A1%E6%9E%B6%E6%9E%84.png)
 
 ### 提升自己的系统设计能力
 
@@ -53,14 +53,16 @@ Tomcat 实现的 2 个核心功能：
 
 `Tomcat`为了实现支持多种 `I/O` 模型和应用层协议，一个容器可能对接多个连接器，就好比一个房间有多个门。
 
-![图片](tomcat.assets/tomcat上层架构.png)Tomcat整体架构
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/tomcat%E4%B8%8A%E5%B1%82%E6%9E%B6%E6%9E%84.png)
+
+Tomcat整体架构
 
 - Server 对应的就是一个 Tomcat 实例。
 - Service 默认只有一个，也就是一个 Tomcat 实例默认一个 Service。
 - Connector：一个 Service 可能多个 连接器，接受不同连接协议。
 - Container: 多个连接器对应一个容器，顶层容器其实就是 Engine。
 
-**每个组件都有对应的生命周期，需要启动，同时还要启动自己内部的子组件，比如一个 Tomcat 实例包含一个 Service，一个 Service 包含多个连接器和一个容器。而一个容器包含多个 Host， Host 内部可能有多个 Context 容器，而一个 Context 也会包含多个 Servlet，所以 Tomcat 利用组合模式管理组件每个组件，对待过个也想对待单个组一样对待**。整体上每个组件设计就像是「俄罗斯套娃」一样。
+**每个组件都有对应的生命周期，需要启动，同时还要启动自己内部的子组件，比如一个 Tomcat 实例包含一个 Service，一个 Service 包含多个连接器和一个容器。而一个容器包含多个 Host， Host 内部可能有多个 Context 容器，而一个 Context 也会包含多个 Servlet，所以 Tomcat 利用组合模式管理组件每个组件，对待多个也像对待单个组件一样对待**。整体上每个组件设计就像是「俄罗斯套娃」一样。
 
 ### 连接器
 
@@ -113,11 +115,11 @@ Tomcat 支持的应用层协议有：
 
 这就是模板方法设计模式的运用。
 
-![应用层协议抽象](tomcat.assets/应用层协议抽象.png)
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/%E5%BA%94%E7%94%A8%E5%B1%82%E5%8D%8F%E8%AE%AE%E6%8A%BD%E8%B1%A1.png)
 
 总结下来，连接器的三个核心组件 `Endpoint`、`Processor`和 `Adapter`来分别做三件事情，其中 `Endpoint`和 `Processor`放在一起抽象成了 `ProtocolHandler`组件，它们的关系如下图所示。
 
-![连接器](tomcat.assets/连接器.png)
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/%E8%BF%9E%E6%8E%A5%E5%99%A8.png)
 
 #### ProtocolHandler 组件
 
@@ -146,13 +148,13 @@ Tomcat 支持的应用层协议有：
 
 工作流程如下所示：
 
-![NioEndPoint](tomcat.assets/NioEndPoint.png)
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/NioEndPoint.png)
 
 ##### Processor
 
 Processor 用来实现 HTTP 协议，Processor 接收来自 EndPoint 的 Socket，读取字节流解析成 Tomcat Request 和 Response 对象，并通过 Adapter 将其提交到容器处理，Processor 是对应用层协议的抽象。
 
-![Processor](tomcat.assets/Processor.png)
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/Processor.png)
 
 > 勘误：
 >
@@ -168,7 +170,7 @@ connector.getService().getContainer().getPipeline().getFirst().invoke(request, r
 
 #### Adapter 组件
 
-由于协议的不同，Tomcat 定义了自己的 `Request` 类来存放请求信息，这里其实体现了面向对象的思维。但是这个 Request 不是标准的 `ServletRequest` ，所以不能直接使用 Tomcat 定义 Request 作为参数直接容器。
+由于协议的不同，Tomcat 定义了自己的 `Request` 类来存放请求信息，这里其实体现了面向对象的思维。但是这个 Request 不是标准的 `ServletRequest` ，所以不能直接使用 Tomcat 定义 Request 作为参数直接传递给容器。
 
 Tomcat 设计者的解决方案是引入 `CoyoteAdapter`，这是适配器模式的经典运用，连接器调用 `CoyoteAdapter` 的 `Sevice` 方法，传入的是 `Tomcat Request` 对象，`CoyoteAdapter`负责将 `Tomcat Request` 转成 `ServletRequest`，再调用容器的 `Service`方法。
 
@@ -182,7 +184,7 @@ Tomcat 设计了 4 种容器，分别是 `Engine`、`Host`、`Context`和 `Wrapp
 
 要注意的是这 4 种容器不是平行关系，属于父子关系，如下图所示：
 
-![容器](tomcat.assets/容器.png)
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/%E5%AE%B9%E5%99%A8.png)
 
 你可能会问，为啥要设计这么多层次的容器，这不是增加复杂度么？其实这背后的考虑是，**Tomcat 通过一种分层的架构，使得 Servlet 容器具有很好的灵活性。因为这里正好符合一个 Host 多个 Context， 一个 Context 也包含多个 Servlet，而每个组件都需要统一生命周期管理，所以组合模式设计这些容器**
 
@@ -191,18 +193,18 @@ Tomcat 设计了 4 种容器，分别是 `Engine`、`Host`、`Context`和 `Wrapp
 可通过 Tomcat 配置文件加深对其层次关系理解。
 
 ```xml
-<Server port="8005" shutdown="SHUTDOWN"> // 顶层组件，可包含多个 Service，代表一个 Tomcat 实例
+<Server port="8005" shutdown="SHUTDOWN"> # 顶层组件，可包含多个 Service，代表一个 Tomcat 实例
 
-  <Service name="Catalina">  // 顶层组件，包含一个 Engine ，多个连接器
+  <Service name="Catalina">  # 顶层组件，包含一个 Engine ，多个连接器
     <Connector port="8080" protocol="HTTP/1.1" connectionTimeout="20000" redirectPort="8443" />
 
-    <Connector port="8009" protocol="AJP/1.3" redirectPort="8443" />  // 连接器
+    <Connector port="8009" protocol="AJP/1.3" redirectPort="8443" />  # 连接器
       
-    <Engine name="Catalina" defaultHost="localhost">  // 容器组件：一个 Engine 处理 Service 所有请求，包含多个 Host
+    <Engine name="Catalina" defaultHost="localhost">  # 容器组件：一个 Engine 处理 Service 所有请求，包含多个 Host
  	  
-      <Host name="localhost"  appBase="webapps" unpackWARs="true" autoDeploy="true"> // 容器组件：处理指定Host下的客户端请求， 可包含多个 Context
+      <Host name="localhost"  appBase="webapps" unpackWARs="true" autoDeploy="true"> # 容器组件：处理指定Host下的客户端请求， 可包含多个 Context
           
-   		<Context></Context>// 容器组件：处理特定 Context Web应用的所有客户端请求
+   		<Context></Context># 容器组件：处理特定 Context Web应用的所有客户端请求
           
       </Host>
     </Engine>
@@ -235,7 +237,7 @@ public interface Container extends Lifecycle {
 
 当一个请求到来时，`Mapper` 组件通过解析请求 URL 里的域名和路径，再到自己保存的 Map 里去查找，就能定位到一个 `Servlet`。请你注意，一个请求 URL 最后只会定位到一个 `Wrapper`容器，也就是一个 `Servlet`。
 
-![请求过程](tomcat.assets/请求过程.png)
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/%E8%AF%B7%E6%B1%82%E8%BF%87%E7%A8%8B.png)
 
 假如有用户访问一个 URL，比如图中的`http://user.shopping.com:8080/order/buy`，Tomcat 如何将这个 URL 定位到一个 Servlet 呢？
 
@@ -272,9 +274,9 @@ public interface Pipeline {
 
 其实每个容器都有一个 Pipeline 对象，只要触发了这个 Pipeline 的第一个 Valve，这个容器里`Pipeline`中的 Valve 就都会被调用到。但是，不同容器的 Pipeline 是怎么链式触发的呢，比如 Engine 中 Pipeline 需要调用下层容器 Host 中的 Pipeline。
 
-这是因为 `Pipeline`中还有个 `getBasic`方法。这个 `BasicValve`处于 `Valve`链表的末端，它是 `Pipeline`中必不可少的一个 `Valve`，负责调用下层容器的 Pipeline 里的第一个 Valve。
+这是因为 `Pipeline`中还有个 `BasicValve`。这个 `BasicValve`处于 `Valve`链表的末端，它是 `Pipeline`中必不可少的一个 `Valve`，由在new容器的时候由tomcat添加，负责调用下层容器的 Pipeline 里的第一个 Valve。
 
-![Pipeline-Valve](tomcat.assets/Pipeline-Valve.png)
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/Pipeline-Valve.png)
 
 整个过程分是通过连接器中的 `CoyoteAdapter` 触发，它会调用 Engine 的第一个 Valve：
 
@@ -293,8 +295,8 @@ Wrapper 容器的最后一个 Valve 会创建一个 Filter 链，并调用 `doFi
 
 前面我们不是讲到了 `Filter`，似乎也有相似的功能，那 `Valve` 和 `Filter`有什么区别吗？它们的区别是：
 
-- `Valve`是 `Tomcat`的私有机制，与 Tomcat 的基础架构 `API`是紧耦合的。`Servlet API`是公有的标准，所有的 Web 容器包括 Jetty 都支持 Filter 机制。
-- 另一个重要的区别是 `Valve`工作在 Web 容器级别，拦截所有应用的请求；而 `Servlet Filter` 工作在应用级别，只能拦截某个 `Web` 应用的所有请求。如果想做整个 `Web`容器的拦截器，必须通过 `Valve`来实现。
+- `Valve`是 `Tomcat`的私有机制，与 Tomcat 的基础架构 `API`是紧耦合的。`Servlet API`是公有的标准，所有的 Web 容器包括 Jetty 都支持 Filter 机制。**在pipeline中由单向链表组织。如果实现`Valve`接口，定义自己的`Valve`，需要自己维护`getNext`、`setNext`(该方法在pipeline.addValve()时会调用)方法和`nextValve`字段，在invoke方法中需要getNext().invoke()（不然，这个链条没办法往下走）**
+- 另一个重要的区别是 `Valve`工作在 Web 容器级别，拦截所有应用的请求；而 `Servlet Filter` 工作在应用级别，只能拦截某个 `Web` 应用的所有请求。如果想做整个 `Web`容器的拦截器，必须通过 `Valve`来实现。**`Filter`在`FilterChain`中以数组的形式组织，只需要实现`doFilter`方法，`doFilter`执行自定义的逻辑，如果需要链条往下走，调用`filterChain.doFilter()`，也就是说filterChain管理往下走的逻辑。(责任链模式推荐这种)**
 
 #### Lifecycle 生命周期
 
@@ -318,7 +320,7 @@ Wrapper 容器的最后一个 Valve 会创建一个 Filter 链，并调用 `doFi
 
 以下就是 `Lyfecycle` 接口的定义:
 
-![Lyfecycle](tomcat.assets/Lyfecycle.png)
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/Lyfecycle%E7%BB%A7%E6%89%BF%E5%85%B3%E7%B3%BB.png)
 
 ##### 重用性：LifeCycleBase 抽象基类
 
@@ -375,7 +377,7 @@ Tomcat 为了实现一键式启停以及优雅的生命周期管理，并考虑�
 
 观察者模式听起来 “高大上”，其实就是当一个事件发生后，需要执行一连串更新操作。实现了低耦合、非侵入式的通知与更新机制。
 
-![Lyfecycle继承关系](tomcat.assets/Lyfecycle继承关系.png)
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/Lyfecycle%E7%BB%A7%E6%89%BF%E5%85%B3%E7%B3%BB.png)
 
 `Container` 继承了 LifeCycle，StandardEngine、StandardHost、StandardContext 和 StandardWrapper 是相应容器组件的具体实现类，因为它们都是容器，所以继承了 ContainerBase 抽象基类，而 ContainerBase 实现了 Container 接口，也继承了 LifeCycleBase 类，它们的生命周期管理接口和功能接口是分开的，这也符合设计中**接口分离的原则**。
 
@@ -431,7 +433,7 @@ protected final Class<?> defineClass(byte[] b, int off, int len){
 
 JDK 中有 3 个类加载器，另外你也可以自定义类加载器，它们的关系如下图所示。
 
-![类加载器](tomcat.assets/类加载器.png)
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/%E7%B1%BB%E5%8A%A0%E8%BD%BD%E5%99%A8.png)
 
 - `BootstrapClassLoader`是启动类加载器，由 C 语言实现，用来加载 `JVM`启动时所需要的核心类，比如`rt.jar`、`resources.jar`等。
 - `ExtClassLoader`是扩展类加载器，用来加载`\jre\lib\ext`目录下 JAR 包。
@@ -608,7 +610,7 @@ Tomcat 作为 `Servlet`容器，它负责加载我们的 `Servlet`类，此外�
 2. 假如两个 Web 应用都依赖同一个第三方的 JAR 包，比如 `Spring`，那 `Spring`的 JAR 包被加载到内存后，`Tomcat`要保证这两个 Web 应用能够共享，也就是说 `Spring`的 JAR 包只被加载一次，否则随着依赖的第三方 JAR 包增多，`JVM`的内存会膨胀。
 3. 跟 JVM 一样，我们需要隔离 Tomcat 本身的类和 Web 应用的类。
 
-![Tomcat类加载器体系图](tomcat.assets/Tomcat类加载器体系图.png)
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/Tomcat%E7%B1%BB%E5%8A%A0%E8%BD%BD%E5%99%A8%E4%BD%93%E7%B3%BB%E5%9B%BE.png)
 
 ##### 1. WebAppClassLoader
 
@@ -634,9 +636,9 @@ Tomcat 的解决方案是自定义一个类加载器 `WebAppClassLoader`， 并�
 
 通过前面对 Tomcat 整体架构的学习，知道了 Tomcat 有哪些核心组件，组件之间的关系。以及 Tomcat 是怎么处理一个 HTTP 请求的。下面我们通过一张简化的类图来回顾一下，从图上你可以看到各种组件的层次关系，图中的虚线表示一个请求在 Tomcat 中流转的过程。
 
-![Tomcat整体流程](tomcat.assets/Tomcat整体流程.png)
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/Tomcat%E6%95%B4%E4%BD%93%E6%B5%81%E7%A8%8B.png)
 
-![Tomcat整体架构](Tomcat.assets/Tomcat整体架构.png)
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/Tomcat%E6%95%B4%E4%BD%93%E6%9E%B6%E6%9E%84.png)
 
 > 勘误：
 >
@@ -645,7 +647,7 @@ Tomcat 的解决方案是自定义一个类加载器 `WebAppClassLoader`， 并�
 
 ### 自己跟源码画的结构图
 
-![tomcat运行结构图](tomcat.assets/tomcat%E8%BF%90%E8%A1%8C%E7%BB%93%E6%9E%84%E5%9B%BE-1612795673439.png)         
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/tomcat%E8%BF%90%E8%A1%8C%E7%BB%93%E6%9E%84%E5%9B%BE-1612795673439.png)
 
 - Server：表示整个Catalina servlet容器。它的属性表示servlet容器作为一个整体的特性。服务器可以包含一个或多个服务，以及顶级的命名集资源。通常，此接口的实现也将实现生命周期，这样当调用`start()`和`stop()`方法时，所有已定义的服务也将启动或停止。在这两者之间，实现必须在端口属性指定的端口号上打开服务器套接字。当连接被接受时，将读取第一行并与指定的shutdown命令进行比较。如果命令匹配，则表示服务器关闭已启动。注释-该类的具体实现应该在其构造函数中向ServerFactory类注册（singleton）实例。
 - Service：是由一个或多个连接器组成的组，它们共享一个容器来处理传入的请求。例如，这种安排允许非SSL和SSL连接器共享相同数量的web应用。给定的JVM可以包含任意数量的服务实例；但是，它们是彼此完全独立，只共享系统类路径上的基本JVM设施和类。
@@ -674,10 +676,10 @@ spring的启动如下：
 
 1. StandardContext启动时，startInternal()发布一个CONFIGURE_START_EVENT事件，由ContextConfig监听器进行处理
 2. ContextConfig调用lifecycleEvent()->configureStart()->webConfig()
-3. webConfig()解析web.xml，扫描项目中（包括引入的jar）的META-INF\services\javax.servlet.ServletContainerInitializer文件，加载文件中的类。springmvc中为：org.springframework.web.SpringServletContainerInitializer
-4. webConfig()会继续拿到该类上的@HandlesTypes的注解，并查找该注解所设置类型的所有实现类。springmvc设置的为：@HandlesTypes(WebApplicationInitializer.class)
-5. 设置完之后，startInternal()会调用SpringServletContainerInitializer的onStartup()方法，该方法先实例化@HandlesTypes设置的WebApplicationInitializer.class类，然后用该类对象设置我们的springmvc容器。所以我们只要继承了WebApplicationInitializer.class类，我们的配置就会生效。
-6. 在第五步的设置中，除了加载我们的配置，还向ServletContext（StandardContext的facade）添加了一个 ContextLoaderListener。然后startInternal()调用listenerStart()，使用该监听器初始化我们的springmvc容器
+3. webConfig()解析web.xml，然后用processServletContainerInitializers方法**扫描项目中**（包括引入的jar）的META-INF\services\javax.servlet.ServletContainerInitializer文件，加载文件中的类。springmvc中为：org.springframework.web.SpringServletContainerInitializer
+4. webConfig()在末尾会继续拿到该类上的@HandlesTypes的注解，并查找该注解所设置类型的所有实现类。springmvc设置的为：@HandlesTypes(WebApplicationInitializer.class)
+5. 设置完之后，startInternal()在后面会调用SpringServletContainerInitializer的onStartup()方法，该方法先实例化@HandlesTypes设置的WebApplicationInitializer.class类，然后用该类对象设置我们的springmvc容器。该类的父类设置RootConfig，当前类设置WebConfig，并注册DispatcherServlet，设置其启动优先级、映射路径等。所以我们只要继承了WebApplicationInitializer.class类，我们的配置就会生效。
+6. 在第五步的设置中，除了加载我们的配置，还向ServletContext（StandardContext的facade）添加了一个 ContextLoaderListener，这个Listener封装了我们的RootConfig.class。然后startInternal()后面会调用listenerStart()，使用该监听器初始化我们的spring容器，初始化spring容器之后，StandardContext会加载初始化每一个servlet，此时我们的DispatcherServlet就会使用配置进行初始化了，初始化的Bean会放在spring容器中。
 
 由前文可知，tomcat最终将请求映射到了一个具体的Servlet上面，所以SpringMVC的DispatcherServlet也是这样进行映射的。
 
@@ -692,7 +694,9 @@ protected String[] getServletMappings() {
 
 因为将DispatcherServlet映射到“/”，所以所有的web请求都会由DispatcherServlet进行处理，DispatcherServlet会去寻找相应的Controller进行处理。
 
-![Springmvc执行流程](tomcat.assets/Springmvc执行流程.png)
+### 请求执行过程
+
+![](tomcat%E7%BB%84%E4%BB%B6%E6%9E%B6%E6%9E%84%E5%88%86%E6%9E%90.assets/Springmvc%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B.png)
 
 **注：**
 
@@ -702,7 +706,10 @@ protected String[] getServletMappings() {
 
 **/\** ：**表式所有的文件夹和静态资源。**包括子文件夹**。
 
-
+1. 请求过来后，tomcat会通过**/**映射到DispatcherServlet，调用其service方法
+2. DispatcherServlet的service方法经过一系列调用，会遍历handlerMappings去寻找请求对应的HandlerMethod，HandlerMethod里面封装了我们请求SpringMVC里面的那个方法和这个方法对应Controller
+3. 找到对应的HandlerMethod后，会通过对应的handlerMapping将HandlerMethod与这个mapping对应的interceptor封装成HandlerExecutionChain
+4. 拿到HandlerExecutionChain之后，会查找能够适配这种HandlerMethod类型的适配器HandlerAdapter。首先执行所有interceptor的prehandle，然后通过这个适配器执行对应的方法，（如果是标记了@ResponseBody，那么直接给客户端写回响应）并返回modelAndView，接着执行interceptor的postHandle方法，最后执行interceptor的afterCompletion方法
 
 ## 网络
 

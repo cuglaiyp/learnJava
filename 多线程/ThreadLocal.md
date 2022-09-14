@@ -110,7 +110,7 @@ public void set(T value) {
 
 ## 作用
 
-所以ThreadLocal不是用来解决对象共享访问问题的，而主要是提供了保持对象的方法和避免参数传递的方便的对象访问方式。归纳了两点：
+所以ThreadLocal不是用来解决对象共享访问问题的，而主要是提供了保持对象的方法和避免参数传递的一种方便的对象访问方式。归纳了两点：
 
 1. 每个线程中都有一个自己的ThreadLocalMap类对象，可以将线程自己的对象保持到其中，各管各的，线程可以正确的访问到自己的对象。
 2. 将一个共用的ThreadLocal静态实例作为key，将不同对象的引用保存到不同线程的ThreadLocalMap中，然后在线程执行的各处通过这个静态ThreadLocal实例的get()方法取得自己线程保存的那个对象，避免了将这个对象作为参数传递的麻烦。
@@ -121,7 +121,7 @@ public void set(T value) {
 
    - **最终存在线程中，可以保证在线程死去的时候，线程共享变量ThreadLocalMap则销毁。**
    - **如果ThreadLoad直接使用Map<Thread, Object>为底层数据结构，当有大量的线程使用ThreadLocal时，首先Map访问的性能会下降，伴随着线程生命周期，底层的Map还需要频繁的添加删除entity，这就很容易造成性能瓶颈。而且这种模式违反了单一职责原则**
-   - **（存疑）**~~用ThreadLocal为key是因为：ThreadLocalMap<ThreadLocal,Object>键值对数量为ThreadLocal的数量，一般来说ThreadLocal数量很少，相比在ThreadLocal中用Map<Thread, Object>键值对存储线程共享变量（Thread数量一般来说比ThreadLocal数量多），性能提高很多。~~
+   - 理论上是可以，但没那么优雅。你提出的做法实际上就是所有的线程都访问ThreadLocal的Map，而key是当前线程。但这有点小问题，一个线程是可以拥有多个私有变量的嘛，那key如果是当前线程的话，意味着还点做点「手脚」来唯一标识set进去的value。假设上一步解决了，还有个问题就是；并发量足够大时，意味着所有的线程都去操作同一个Map，Map体积有可能会膨胀，导致访问性能的下降。这个Map维护着所有的线程的私有变量，意味着你不知道什么时候可以「销毁」。现在JDK实现的结构就不一样了。线程需要多个私有变量，那有多个ThreadLocal对象足以，对应的Map体积不会太大。只要线程销毁了，ThreadLocalMap也会被销毁。
 
    
 
@@ -145,7 +145,7 @@ public void set(T value) {
 
    **虽然ThreadLocalMap的get，set方法可以清除ThreadLocalMap中key为null的value，但是get，set方法在内存泄露后并不会必然调用，所以为了防止此类情况的出现，我们有两种手段。**
 
-   1. 使用完线程共享变量后，显示调用ThreadLocalMap.remove方法清除线程共享变量；
+   1. 使用完线程共享变量后，显式调用ThreadLocalMap.remove方法清除线程共享变量；
    2. JDK建议ThreadLocal定义为private static，这样ThreadLocal的弱引用问题则不存在了。
 
    
@@ -154,7 +154,7 @@ public void set(T value) {
 
    正如上面所说，使用弱引用时，如果我们不需要threadLocal，把它的引用置为null，释放它和它在map里面的键值对的内存。线程不死的时候（比如使用了线程池），并且我们没有手动清理ThreadLocalMap，这个是时候就会出现ThreadLocalMap<null, Object>的键值对，造成内存泄露。
 
-   **那么试想一下，如果key不用弱引用，而是强引用着threadLocal实例。这个时候，我们把外部的threadLocal引用置null，想释放threadLocal内存时，由于它又被map内的key强引用着，所以这个threadLocal所代表的键值对无法被回收。并且我们再也无法访问到这个键值对了，因为这个key的外部引用已经被置为null了。我们使用ThreadLocalMap.remove方法也不好使，因为这个key的threadLocal实例并不为null，唯一能做的大概就是盼望着这个县城早点挂掉把！**
+   **那么试想一下，如果key不用弱引用，而是强引用着threadLocal实例。这个时候，我们把外部的threadLocal引用置null，想释放threadLocal内存时，由于它又被map内的key强引用着，所以这个threadLocal所代表的键值对无法被回收。并且我们再也无法访问到这个键值对了，因为这个key的外部引用已经被置为null了。我们使用ThreadLocalMap.remove方法也不好使，因为这个key的threadLocal实例并不为null，唯一能做的大概就是盼望着这个线程早点挂掉把！**
 
 
 

@@ -139,14 +139,15 @@ public class DriverManager {
 然后我们看下ServiceLoader.load()的具体实现：
 
 ```php
-    public static <S> ServiceLoader<S> load(Class<S> service) {
-        ClassLoader cl = Thread.currentThread().getContextClassLoader();
-        return ServiceLoader.load(service, cl);
-    }
-    public static <S> ServiceLoader<S> load(Class<S> service,
-                                            ClassLoader loader){
-        return new ServiceLoader<>(service, loader);
-    }
+public static <S> ServiceLoader<S> load(Class<S> service) {
+    ClassLoader cl = Thread.currentThread().getContextClassLoader();
+    return ServiceLoader.load(service, cl);
+}
+
+public static <S> ServiceLoader<S> load(Class<S> service,
+                                        ClassLoader loader){
+    return new ServiceLoader<>(service, loader);
+}
 ```
 
 可以看到核心就是拿到线程上下文类加载器，然后构造了一个ServiceLoader,后续的具体查找过程，我们不再深入分析，这里只要知道这个ServiceLoader已经拿到了线程上下文类加载器即可。

@@ -199,11 +199,11 @@ private boolean findNodeFromTail(Node node) {
 
 node从Condition队列转移到同步队列：
 
-1. 第一步，就是设置waitStatus为其他值，因此是否等于Node.CONDITON可以作为判断标志，如果等于，说明还在Condition队列中，即不再Sync队列里。在node被放入Sync队列时，第一步就是设置node的prev为当前获取到的尾节点，所以如果发现node的prev为null的话，可以确定node尚未被加入Sync队列。
+1. 第一步，就是设置waitStatus为其他值，因此是否等于Node.CONDITON可以作为判断标志，如果等于，说明还在Condition队列中，即不再Sync队列里。在node被放入Sync队列时，第一步就是设置node的prev为获取到的同步队列的尾节点，所以如果发现node的prev为null的话，可以确定node尚未被加入Sync队列。
 
-2. 相似的，node被放入Sync队列的最后一步是设置node的next，如果发现node的next不为null，说明已经完成了放入Sync队列的过程，因此可以返回true。
+2. 如果没有返回false，并且发现node的next不为null，说明早已经完成了放入Sync队列的过程，因此可以返回true。
 
-3. 当我们执行完两个if而仍未返回时，node的prev一定不为null，next一定为null，这个时候可以认为node正处于放入Sync队列的执行CAS操作执行过程中（enq方法）。而这个CAS操作有可能失败，因此我们再给node一次机会，调用findNodeFromTail来检测
+3. 当我们执行完两个if而仍未返回时，node的prev一定不为null，next一定为null，这个时候node正处于放入Sync队列的执行CAS操作执行过程中（enq方法）。而这个CAS操作有可能失败，因此我们再给node一次机会，调用findNodeFromTail来检测
 4. findNodeFromTail方法从尾部遍历Sync队列，如果检查node是否在队列中，如果还不在，此时node也许在CAS自旋中，在不久的将来可能会进到Sync队列里。但我们已经等不了了，直接返回false。那在这个线程就不能跳出while循环，只能继续park，等待同步队列的前置结点唤醒它。
 
 复杂一点的就是这个checkInterruptWhileWaiting等待过程中的中断检测逻辑，我们先来看一下。
@@ -337,7 +337,7 @@ protected final boolean isHeldExclusively() {
 private void doSignal(Node first) {
     // 从第一个结点开始唤醒，唤醒成功跳出循环
     do {
-        // 判断等待队列是否还有结点，没有的画
+        // 判断等待队列是否还有结点，没有的话
         if ( (firstWaiter = first.nextWaiter) == null)
             // 尾指针也置空
             lastWaiter = null;

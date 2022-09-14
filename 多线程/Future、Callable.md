@@ -26,7 +26,7 @@
 
 ### 2.2 RunnableFuture接口
 
-RunnableFuture继承了Future和Runnable两个接口，也就是说RunnableFuture的子类既可以作为线程的执行任务，又可以拿到这个任务的返回值，从而实现得到返回值。
+RunnableFuture继承了Future和Runnable两个接口，也就是说RunnableFuture的子类既可以作为线程的执行任务，又可以拿到这个任务的返回值，从而实现得到返回值的功能。
 
 ### 2.3 FutureTask类
 
@@ -175,7 +175,7 @@ private void finishCompletion() {
     // assert state > COMPLETING;
     // 拿到单链表中第一个等待的线程结点
     for (WaitNode q; (q = waiters) != null;) {
-        // 拿到结点中，把其置空，不让其他线程拿
+        // 拿到结点后，将其置空，不让其他线程拿
         if (UNSAFE.compareAndSwapObject(this, waitersOffset, q, null)) {
             for (;;) {
                 Thread t = q.thread;
@@ -346,6 +346,8 @@ private V report(int s) throws ExecutionException {
 #### 3.3.3 get方法总结
 
 这个方法也不难，比较特别的就是：当结果还没跑出来的时候，取结果的线程会阻塞，等待结果出来。而且可以有很多线程都来取结果。
+
+
 
 ## Completable
 

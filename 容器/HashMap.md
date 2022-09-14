@@ -106,7 +106,7 @@ final Node<K,V>[] resize() {
         int oldThr = threshold;
     	// 初始化新的table容量和阈值 
         int newCap, newThr = 0;
-    /* 1. resize()函数在size > threshold时被调用。oldCap大于 0 代表原来的 table表非空, 			oldCap 为原表的大小,oldThr(threshold) 为 oldCap × load_factor
+    /* 1. resize()函数在size > threshold时被调用。oldCap大于 0 代表原来的 table表非空, 		oldCap 为原表的大小,oldThr(threshold) 为 oldCap × load_factor
 	*/
         if (oldCap > 0) {
             // 若旧table容量已超过最大容量,更新阈值为Integer.MAX_VALUE(最大整形值),
@@ -905,7 +905,7 @@ final Node<K,V> removeNode(int hash, Object key, Object value,
 2. 扩容后数据存储位置的计算方式也不一样：
    - 在JDK1.7的时候是直接用hash值和需要扩容的二进制数进行&amp;（这里就是为什么扩容的时候为啥一定必须是2的多少次幂的原因所在，因为如果只有2的n次幂的情况时最后一位二进制数才一定是1，这样能最大程度减少hash碰撞）（hash值 &amp; length-1） 。
    - 而在JDK1.8的时候直接用了JDK1.7的时候计算的规律，也就是扩容前的原始位置+扩容的大小值=JDK1.8的计算方式，而不再是JDK1.7的那种异或的方法。但是这种方式就相当于只需要判断Hash值的新增参与运算的位是0还是1就直接迅速计算出了扩容后的储存方式。
-   - JDK1.7的时候使用的是数组+ 单链表的数据结构。但是在JDK1.8及之后时，使用的是数组+链表+红黑树的数据结构（当链表的深度达到8的时候，也就是默认阈值，就会自动扩容把链表转成红黑树的数据结构来把时间复杂度从O（N）变成O（logN）提高了效率）。
+   - JDK1.7的时候使用的是数组+ 单链表的数据结构。但是在JDK1.8及之后时，使用的是数组+链表+红黑树的数据结构（当链表的深度达到8（也就是默认阈值）且桶数大于等于64的时候，就会自动扩容把链表转成红黑树的数据结构来把时间复杂度从O（N）变成O（logN）提高了效率）。
 
 ## HashMap为什么是线程不安全的？
 
@@ -923,6 +923,6 @@ HashMap 在并发时可能出现的问题主要是两方面：
 
 1. HashMap几乎可以等价于Hashtable，除了HashMap是非synchronized的，并可以接受null(HashMap可以接受为null的键值(key)和值(value)，而Hashtable则不行)。
 2. HashMap是非synchronized，而Hashtable是synchronized，这意味着Hashtable是线程安全的，多个线程可以共享一个Hashtable；而如果没有正确的同步的话，多个线程是不能共享HashMap的。Java 5提供了ConcurrentHashMap，它是HashTable的替代，比HashTable的扩展性更好。
-3. 另一个区别是HashMap的迭代器(Iterator)是fail-fast（你不能用迭代器遍历，用容器的移除方法）迭代器，而Hashtable的enumerator迭代器不是fail-fast的。所以当有其它线程改变了HashMap的结构（增加或者移除元素），将会抛出ConcurrentModificationException，但迭代器本身的remove()方法移除元素则不会抛出ConcurrentModificationException异常。但这并不是一个一定发生的行为，要看JVM。这条同样也是Enumeration和Iterator的区别。
+3. 另一个区别是HashMap的迭代器(Iterator)是fail-fast（你不能用迭代器遍历，而使用容器的移除方法）迭代器，而Hashtable的enumerator迭代器不是fail-fast的。所以当有其它线程改变了HashMap的结构（增加或者移除元素），将会抛出ConcurrentModificationException，但迭代器本身的remove()方法移除元素则不会抛出ConcurrentModificationException异常。但这并不是一个一定发生的行为，要看JVM。这条同样也是Enumeration和Iterator的区别。
 4. 由于Hashtable是线程安全的也是synchronized，所以在单线程环境下它比HashMap要慢。如果你不需要同步，只需要单一线程，那么使用HashMap性能要好过Hashtable。
 5. HashMap不能保证随着时间的推移Map中的元素次序是不变的。
